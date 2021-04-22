@@ -22,7 +22,7 @@ Highlight of this package:
 ## Step 1:
 Install from composer
 ```sh
-composer require peopleaps/scorm
+composer require devianl2/laravel-scorm
 ```
 
 ## Step 2:
