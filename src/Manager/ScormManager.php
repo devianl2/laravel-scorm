@@ -287,7 +287,7 @@ class ScormManager
         $scoTracking->setDetails($storeTracking->details);
         $scoTracking->setLatestDate($storeTracking->latest_date);
 
-        return $storeTracking;
+        return $scoTracking;
     }
 
     public function updateScoTracking($scoUuid, $userId, $data)
@@ -309,10 +309,14 @@ class ScormManager
 
         switch ($scorm->version) {
             case Scorm::SCORM_12:
+                if (isset($data['cmi.suspend_data']) && !empty($data['cmi.suspend_data'])) {
+                    $tracking->setSuspendData($data['cmi.suspend_data']);
+                }
+
                 $scoreRaw = isset($data['cmi.core.score.raw']) ? intval($data['cmi.core.score.raw']) : null;
                 $scoreMin = isset($data['cmi.core.score.min']) ? intval($data['cmi.core.score.min']) : null;
                 $scoreMax = isset($data['cmi.core.score.max']) ? intval($data['cmi.core.score.max']) : null;
-                $lessonStatus = isset($data['cmi.core.lesson_status']) ? $data['cmi.core.lesson_status'] : null;
+                $lessonStatus = isset($data['cmi.core.lesson_status']) ? $data['cmi.core.lesson_status'] : 'unknown';
                 $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
                 $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
                 $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
@@ -322,7 +326,6 @@ class ScormManager
                 $tracking->setExitMode($data['cmi.core.exit']);
                 $tracking->setLessonLocation($data['cmi.core.lesson_location']);
                 $tracking->setSessionTime($sessionTimeInHundredth);
-                $tracking->setSuspendData($data['cmi.suspend_data']);
 
                 // Compute total time
                 $totalTimeInHundredth = $this->convertTimeInHundredth($data['cmi.core.total_time']);
@@ -338,6 +341,12 @@ class ScormManager
                 if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
                     $tracking->setScoreRaw($scoreRaw);
                     $bestScore = $scoreRaw;
+                }
+
+                if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
+                    $tracking->setScoreRaw($scoreRaw);
+                    $tracking->setScoreMin($scoreMin);
+                    $tracking->setScoreMax($scoreMax);
                 }
 
                 if (empty($bestStatus) || ($lessonStatus !== $bestStatus && $statusPriority[$lessonStatus] > $statusPriority[$bestStatus])) {
@@ -358,7 +367,7 @@ class ScormManager
             case Scorm::SCORM_2004:
                 $tracking->setDetails($data);
 
-                if (isset($data['cmi.suspend_data'])) {
+                if (isset($data['cmi.suspend_data']) && !empty($data['cmi.suspend_data'])) {
                     $tracking->setSuspendData($data['cmi.suspend_data']);
                 }
 

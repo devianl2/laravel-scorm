@@ -13,8 +13,8 @@ class ScoTracking
     public $scoreMax;
     public $progression = 0;
     public $scoreScaled;
-    public $lessonStatus;
-    public $completionStatus;
+    public $lessonStatus = 'unknown';
+    public $completionStatus = 'unknown';
     public $sessionTime;
     public $totalTimeInt;
     public $totalTimeString;
