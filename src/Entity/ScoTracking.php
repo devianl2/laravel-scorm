@@ -4,6 +4,8 @@
 namespace Peopleaps\Scorm\Entity;
 
 
+use Carbon\Carbon;
+
 class ScoTracking
 {
     public $userId;
@@ -244,7 +246,7 @@ class ScoTracking
         return $this->latestDate;
     }
 
-    public function setLatestDate(\DateTime $latestDate = null)
+    public function setLatestDate(Carbon $latestDate = null)
     {
         $this->latestDate = $latestDate;
     }

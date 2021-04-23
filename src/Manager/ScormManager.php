@@ -285,7 +285,7 @@ class ScormManager
         $scoTracking->setLessonMode($storeTracking->lesson_mode);
         $scoTracking->setIsLocked($storeTracking->is_locked);
         $scoTracking->setDetails($storeTracking->details);
-        $scoTracking->setLatestDate($storeTracking->latest_date);
+        $scoTracking->setLatestDate(Carbon::parse($storeTracking->latest_date));
 
         return $scoTracking;
     }
@@ -293,7 +293,7 @@ class ScormManager
     public function updateScoTracking($scoUuid, $userId, $data)
     {
         $tracking = $this->createScoTracking($scoUuid, $userId);
-        $tracking->setLatestDate(new \DateTime());
+        $tracking->setLatestDate(Carbon::now());
         $sco    =   $tracking->getSco();
         $scorm  =   ScormModel::where('id', $sco['id'])->firstOrFail();
 
@@ -338,10 +338,6 @@ class ScormManager
                 $bestStatus = $tracking->getLessonStatus();
 
                 // Update best score if the current score is better than the previous best score
-                if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
-                    $tracking->setScoreRaw($scoreRaw);
-                    $bestScore = $scoreRaw;
-                }
 
                 if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
                     $tracking->setScoreRaw($scoreRaw);
