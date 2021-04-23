@@ -39,4 +39,8 @@ class ScormScoTrackingModel extends Model
     {
         return config('scorm.table_names.scorm_sco_tracking_table', parent::getTable());
     }
+
+    public function sco() {
+        return $this->belongsTo(ScormScoModel::class, 'sco_id', 'id');
+    }
 }
