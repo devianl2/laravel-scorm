@@ -6,6 +6,7 @@ namespace Peopleaps\Scorm\Manager;
 use App\Models\User;
 use Carbon\Carbon;
 use DOMDocument;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -38,7 +39,7 @@ class ScormManager
         $this->scormLib = new ScormLib();
     }
 
-    public function uploadScormArchive(UploadedFile $file)
+    public function uploadScormArchive(UploadedFile $file, Model $model)
     {
         // Checks if it is a valid scorm archive
         $scormData  =   null;
@@ -63,7 +64,8 @@ class ScormManager
             $scorm->origin_file =   $scormData['name'];
             $scorm->origin_file_mime =   $scormData['type'];
             $scorm->uuid =   $scormData['hashName'];
-            $scorm->save();
+
+            $scorm  =   $model->scorm()->save($scorm);
 
             if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
                 foreach ($scormData['scos'] as $scoData) {
