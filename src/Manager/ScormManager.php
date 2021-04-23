@@ -204,6 +204,19 @@ class ScormManager
         ];
     }
 
+    public function getScos($scormId) {
+        $scos  =   ScormScoModel::with([
+            'scorm'
+        ])->where('scorm_id', $scormId)
+            ->get();
+
+        return $scos;
+    }
+
+    public function getUserResult($scoId, $userId) {
+        return ScormScoTrackingModel::where('sco_id', $scoId)->where('user_id', $userId)->first();
+    }
+
     public function createScoTracking($scoUuid, $userId = null)
     {
         $sco    =   ScormScoModel::where('uuid', $scoUuid)->firstOrFail();
@@ -518,9 +531,6 @@ class ScormManager
         }
 
         $updateResult->save();
-
-//        $this->om->persist($tracking);
-//        $this->om->flush();
 
         return $updateResult;
     }
