@@ -204,6 +204,11 @@ class ScormManager
         ];
     }
 
+    /**
+     * Get SCO list
+     * @param $scormId
+     * @return \Illuminate\Database\Eloquent\Builder[]|\Illuminate\Database\Eloquent\Collection
+     */
     public function getScos($scormId) {
         $scos  =   ScormScoModel::with([
             'scorm'
@@ -211,6 +216,20 @@ class ScormManager
             ->get();
 
         return $scos;
+    }
+
+    /**
+     * Get sco by uuid
+     * @param $scoUuid
+     * @return null|\Illuminate\Database\Eloquent\Builder|Model
+     */
+    public function getScoByUuid($scoUuid) {
+        $sco    =   ScormScoModel::with([
+            'scorm'
+        ])->where('uuid', $scoUuid)
+            ->firstOrFail();
+
+        return $sco;
     }
 
     public function getUserResult($scoId, $userId) {
