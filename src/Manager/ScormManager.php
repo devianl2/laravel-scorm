@@ -373,10 +373,10 @@ class ScormManager
 
                 // Update best score if the current score is better than the previous best score
 
-                if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
-                    $tracking->setScoreRaw($scoreRaw);
-                    $tracking->setScoreMin($scoreMin);
-                    $tracking->setScoreMax($scoreMax);
+                if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
+                    $tracking->setScoreRaw((int)$scoreRaw);
+                    $tracking->setScoreMin((int)$scoreMin);
+                    $tracking->setScoreMax((int)$scoreMax);
                 }
 
                 if (empty($bestStatus) || ($lessonStatus !== $bestStatus && $statusPriority[$lessonStatus] > $statusPriority[$bestStatus])) {
@@ -431,10 +431,10 @@ class ScormManager
                 $tracking->setTotalTimeString($totalTimeInterval);
 
                 // Update best score if the current score is better than the previous best score
-                if (empty($bestScore) || (!is_null($scoreRaw) && $scoreRaw > $bestScore)) {
-                    $tracking->setScoreRaw($scoreRaw);
-                    $tracking->setScoreMin($scoreMin);
-                    $tracking->setScoreMax($scoreMax);
+                if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
+                    $tracking->setScoreRaw((int)$scoreRaw);
+                    $tracking->setScoreMin((int)$scoreMin);
+                    $tracking->setScoreMax((int)$scoreMax);
                     $tracking->setScoreScaled($scoreScaled);
                 }
 
