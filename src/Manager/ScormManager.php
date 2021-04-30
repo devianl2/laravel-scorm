@@ -172,11 +172,11 @@ class ScormManager
 
         $destinationDir = $rootFolder.$hashName; // file path
 
-        if (!File::isDirectory($rootFolder.$destinationDir)) {
-            File::makeDirectory($rootFolder.$destinationDir, 0755, true, true);
+        if (!File::isDirectory($destinationDir)) {
+            File::makeDirectory($destinationDir, 0755, true, true);
         }
 
-        $zip->extractTo($rootFolder.$destinationDir);
+        $zip->extractTo($destinationDir);
         $zip->close();
     }
 
@@ -196,11 +196,17 @@ class ScormManager
             throw new StorageNotFoundException();
         }
 
-        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
-        $destinationDir = config('scorm.upload_path').$hashName; // file path
+        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root');
+
+        if (substr($rootFolder, -1) != '/') {
+            // If end with xxx/
+            $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
+        }
+
+        $destinationDir = $rootFolder.$hashName; // file path
 
         // Move Scorm archive in the files directory
-        $finalFile = $file->move($rootFolder.$destinationDir, $hashName.'.zip');
+        $finalFile = $file->move($destinationDir, $hashName.'.zip');
 
         return [
             'name' => $hashFileName, // to follow standard file data format
