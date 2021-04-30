@@ -22,6 +22,7 @@ class CreateScormTables extends Migration
         // scorm_model
         Schema::create($tableNames['scorm_table'], function (Blueprint $table) {
             $table->bigIncrements('id');
+            $table->morphs('resource');
             $table->string('version');
             $table->string('hash_name');
             $table->string('origin_file')->nullable();
