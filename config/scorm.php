@@ -10,7 +10,4 @@ return [
     ],
     // Scorm directory. You may create a custom path in file system
     'disk'  =>  'local',
-    // Path to generated scorm folder. (Eg: path/scorm-folder/{generated hashname folder}/{scomfiles}
-    'upload_path'   =>  'scorm-folder/',
-
 ];

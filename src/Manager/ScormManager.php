@@ -162,8 +162,15 @@ class ScormManager
             throw new StorageNotFoundException();
         }
 
-        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
-        $destinationDir = config('scorm.upload_path').$hashName; // file path
+
+        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root');
+
+        if (substr($rootFolder, -1) != '/') {
+            // If end with xxx/
+            $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
+        }
+
+        $destinationDir = $rootFolder.$hashName; // file path
 
         if (!File::isDirectory($rootFolder.$destinationDir)) {
             File::makeDirectory($rootFolder.$destinationDir, 0755, true, true);
