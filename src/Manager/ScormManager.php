@@ -57,7 +57,7 @@ class ScormManager
             $scormData  =   $this->generateScorm($file);
         }
 
-        $oldModel   =   $model; // get old scorm data for deletion (If success to store new)
+        $oldModel   =   $model->scorm()->first(); // get old scorm data for deletion (If success to store new)
 
         // save to db
         if ($scormData && is_array($scormData)) {
