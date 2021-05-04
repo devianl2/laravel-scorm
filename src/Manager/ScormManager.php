@@ -164,7 +164,7 @@ class ScormManager
 
             // Delete all tracking associate with sco
             foreach ($oldScos as $oldSco) {
-                $oldSco->scoTrackings->delete();
+                $oldSco->scoTrackings()->delete();
             }
 
             $model->scos()->delete(); // delete scos
