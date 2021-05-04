@@ -156,7 +156,7 @@ class ScormManager
         return $data;
     }
 
-    public function deleteScormData(ScormModel $model) {
+    public function deleteScormData(Model $model) {
         // Delete after the previous item is stored
         if ($model) {
 
