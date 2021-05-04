@@ -16,4 +16,8 @@ class ScormScoModel extends Model
     public function scorm() {
         return $this->belongsTo(ScormModel::class, 'scorm_id', 'id');
     }
+
+    public function scoTrackings() {
+        return $this->hasMany(ScormScoTrackingModel::class, 'sco_id', 'id');
+    }
 }

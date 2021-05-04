@@ -45,6 +45,7 @@ class ScormManager
         $scormData  =   null;
         $zip = new ZipArchive();
         $openValue = $zip->open($file);
+        $oldModel   =   null;
 
         $isScormArchive = (true === $openValue) && $zip->getStream('imsmanifest.xml');
 
@@ -56,8 +57,11 @@ class ScormManager
             $scormData  =   $this->generateScorm($file);
         }
 
+        $oldModel   =   $model; // get old scorm data for deletion (If success to store new)
+
         // save to db
         if ($scormData && is_array($scormData)) {
+
             $scorm  =   new ScormModel();
             $scorm->version =   $scormData['version'];
             $scorm->hash_name =   $scormData['hashName'];
@@ -94,6 +98,10 @@ class ScormManager
                     $sco->prerequisites  =   $scoData->prerequisites;
                     $sco->save();
                 }
+            }
+
+            if ($oldModel) {
+                $this->deleteScormData($oldModel);
             }
         }
 
@@ -148,6 +156,35 @@ class ScormManager
         return $data;
     }
 
+    public function deleteScormData(Model $model) {
+        // Delete after the previous item is stored
+        if ($model) {
+
+            $oldScos    =   $model->scos()->get();
+
+            // Delete all tracking associate with sco
+            foreach ($oldScos as $oldSco) {
+                $oldSco->scoTrackings->delete();
+            }
+
+            $model->scos()->delete(); // delete scos
+            $model->delete(); // delete scorm
+
+            // Delete folder from server
+            $this->deleteScormFolder($model->hash_name);
+        }
+    }
+    /**
+     * @param $folderHashedName
+     * @return bool
+     */
+    protected function deleteScormFolder($folderHashedName) {
+
+        $response   =   Storage::disk('scorm')->deleteDirectory($folderHashedName);
+
+        return $response;
+    }
+
     /**
      * Unzip a given ZIP file into the web resources directory.
      *
@@ -161,7 +198,6 @@ class ScormManager
         if (!config()->has('filesystems.disks.'.config('scorm.disk').'.root')) {
             throw new StorageNotFoundException();
         }
-
 
         $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root');
 
