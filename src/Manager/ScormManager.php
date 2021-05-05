@@ -350,6 +350,7 @@ class ScormManager
             'updated_at'  =>  Carbon::now(),
         ]);
 
+        $scoTracking->setUuid($storeTracking->uuid);
         $scoTracking->setProgression($storeTracking->progression);
         $scoTracking->setScoreRaw($storeTracking->score_raw);
         $scoTracking->setScoreMin($storeTracking->score_min);

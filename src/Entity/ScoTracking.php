@@ -9,6 +9,7 @@ use Carbon\Carbon;
 class ScoTracking
 {
     public $userId;
+    public $uuid;
     public $sco;
     public $scoreRaw;
     public $scoreMin;
@@ -38,6 +39,16 @@ class ScoTracking
     public function setUserId($userId)
     {
         $this->userId = $userId;
+    }
+
+    public function getUuid()
+    {
+        return $this->uuid;
+    }
+
+    public function setUuid($uuid)
+    {
+        $this->uuid = $uuid;
     }
 
     /**
