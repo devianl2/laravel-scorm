@@ -537,19 +537,19 @@ class ScormManager
             $updateResult->progression  =   $tracking->getProgression();
         }
 
-        if ($tracking->getScoreRaw()) {
+        if ($tracking->getScoreRaw() != null) {
             $updateResult->score_raw    =   $tracking->getScoreRaw();
         }
 
-        if ($tracking->getScoreMin()) {
+        if ($tracking->getScoreMin() != null) {
             $updateResult->score_min    =   $tracking->getScoreMin();
         }
 
-        if ($tracking->getScoreMax()) {
+        if ($tracking->getScoreMax() != null) {
             $updateResult->score_max    =   $tracking->getScoreMax();
         }
 
-        if ($tracking->getScoreScaled()) {
+        if ($tracking->getScoreScaled() != null) {
             $updateResult->score_scaled    =   $tracking->getScoreScaled();
         }
 
