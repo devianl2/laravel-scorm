@@ -6,6 +6,7 @@ namespace Peopleaps\Scorm\Manager;
 use App\Models\User;
 use Carbon\Carbon;
 use DOMDocument;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
@@ -372,6 +373,15 @@ class ScormManager
         $scoTracking->setLatestDate(Carbon::parse($storeTracking->latest_date));
 
         return $scoTracking;
+    }
+
+    public function findScoTrackingId($scoUuid, $scoTrackingUuid) {
+        return ScormScoTrackingModel::with([
+            'sco'
+        ])->whereHas('sco', function (Builder $query) use ($scoUuid) {
+            $query->where('uuid', $scoUuid);
+        })->where('uuid', $scoTrackingUuid)
+            ->firstOrFail();
     }
 
     public function updateScoTracking($scoUuid, $userId, $data)
