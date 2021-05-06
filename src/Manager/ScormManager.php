@@ -389,7 +389,7 @@ class ScormManager
         $tracking = $this->createScoTracking($scoUuid, $userId);
         $tracking->setLatestDate(Carbon::now());
         $sco    =   $tracking->getSco();
-        $scorm  =   ScormModel::where('id', $sco['id'])->firstOrFail();
+        $scorm  =   ScormModel::where('id', $sco['scorm_id'])->firstOrFail();
 
         $statusPriority = [
             'unknown' => 0,
