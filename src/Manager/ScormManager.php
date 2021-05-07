@@ -434,9 +434,9 @@ class ScormManager
                 // Update best score if the current score is better than the previous best score
 
                 if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
-                    $tracking->setScoreRaw((int)$scoreRaw);
-                    $tracking->setScoreMin((int)$scoreMin);
-                    $tracking->setScoreMax((int)$scoreMax);
+                    $tracking->setScoreRaw($scoreRaw);
+                    $tracking->setScoreMin($scoreMin);
+                    $tracking->setScoreMax($scoreMax);
                 }
 
                 if (empty($bestStatus) || ($lessonStatus !== $bestStatus && $statusPriority[$lessonStatus] > $statusPriority[$bestStatus])) {
@@ -492,9 +492,9 @@ class ScormManager
 
                 // Update best score if the current score is better than the previous best score
                 if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
-                    $tracking->setScoreRaw((int)$scoreRaw);
-                    $tracking->setScoreMin((int)$scoreMin);
-                    $tracking->setScoreMax((int)$scoreMax);
+                    $tracking->setScoreRaw($scoreRaw);
+                    $tracking->setScoreMin($scoreMin);
+                    $tracking->setScoreMax($scoreMax);
                     $tracking->setScoreScaled($scoreScaled);
                 }
 
@@ -533,81 +533,25 @@ class ScormManager
             ->where('sco_id', $sco['id'])
             ->firstOrFail();
 
-        if ($tracking->getProgression()) {
-            $updateResult->progression  =   $tracking->getProgression();
-        }
-
-        if ($tracking->getScoreRaw() != null) {
-            $updateResult->score_raw    =   $tracking->getScoreRaw();
-        }
-
-        if ($tracking->getScoreMin() != null) {
-            $updateResult->score_min    =   $tracking->getScoreMin();
-        }
-
-        if ($tracking->getScoreMax() != null) {
-            $updateResult->score_max    =   $tracking->getScoreMax();
-        }
-
-        if ($tracking->getScoreScaled() != null) {
-            $updateResult->score_scaled    =   $tracking->getScoreScaled();
-        }
-
-        if ($tracking->getLessonStatus()) {
-            $updateResult->lesson_status    =   $tracking->getLessonStatus();
-        }
-
-        if ($tracking->getCompletionStatus()) {
-            $updateResult->completion_status    =   $tracking->getCompletionStatus();
-        }
-
-        if ($tracking->getSessionTime()) {
-            $updateResult->session_time    =   $tracking->getSessionTime();
-        }
-
-        if ($tracking->getTotalTimeInt()) {
-            $updateResult->total_time_int    =   $tracking->getTotalTimeInt();
-        }
-
-        if ($tracking->getTotalTimeString()) {
-            $updateResult->total_time_string    =   $tracking->getTotalTimeString();
-        }
-
-        if ($tracking->getEntry()) {
-            $updateResult->entry    =   $tracking->getEntry();
-        }
-
-        if ($tracking->getSuspendData()) {
-            $updateResult->suspend_data    =   $tracking->getSuspendData();
-        }
-
-        if ($tracking->getCredit()) {
-            $updateResult->credit    =   $tracking->getCredit();
-        }
-
-        if ($tracking->getExitMode()) {
-            $updateResult->exit_mode    =   $tracking->getExitMode();
-        }
-
-        if ($tracking->getLessonLocation()) {
-            $updateResult->lesson_location    =   $tracking->getLessonLocation();
-        }
-
-        if ($tracking->getLessonMode()) {
-            $updateResult->lesson_mode    =   $tracking->getLessonMode();
-        }
-
-        if ($tracking->getIsLocked()) {
-            $updateResult->is_locked    =   $tracking->getIsLocked();
-        }
-
-        if ($tracking->getDetails()) {
-            $updateResult->details    =   $tracking->getDetails();
-        }
-
-        if ($tracking->getLatestDate()) {
-            $updateResult->latest_date    =   $tracking->getLatestDate();
-        }
+        $updateResult->progression  =   $tracking->getProgression();
+        $updateResult->score_raw    =   $tracking->getScoreRaw();
+        $updateResult->score_min    =   $tracking->getScoreMin();
+        $updateResult->score_max    =   $tracking->getScoreMax();
+        $updateResult->score_scaled    =   $tracking->getScoreScaled();
+        $updateResult->lesson_status    =   $tracking->getLessonStatus();
+        $updateResult->completion_status    =   $tracking->getCompletionStatus();
+        $updateResult->session_time    =   $tracking->getSessionTime();
+        $updateResult->total_time_int    =   $tracking->getTotalTimeInt();
+        $updateResult->total_time_string    =   $tracking->getTotalTimeString();
+        $updateResult->entry    =   $tracking->getEntry();
+        $updateResult->suspend_data    =   $tracking->getSuspendData();
+        $updateResult->exit_mode    =   $tracking->getExitMode();
+        $updateResult->credit    =   $tracking->getCredit();
+        $updateResult->lesson_location    =   $tracking->getLessonLocation();
+        $updateResult->lesson_mode    =   $tracking->getLessonMode();
+        $updateResult->is_locked    =   $tracking->getIsLocked();
+        $updateResult->details    =   $tracking->getDetails();
+        $updateResult->latest_date    =   $tracking->getLatestDate();
 
         $updateResult->save();
 
