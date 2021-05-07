@@ -426,6 +426,10 @@ class ScormManager
                 $totalTimeInHundredth += $sessionTimeInHundredth;
 
                 // Persist total time
+                if ($tracking->getTotalTimeInt() > 0) {
+                    $totalTimeInHundredth   +=  $tracking->getTotalTimeInt();
+                }
+
                 $tracking->setTotalTime($totalTimeInHundredth, Scorm::SCORM_12);
 
                 $bestScore = $tracking->getScoreRaw();
