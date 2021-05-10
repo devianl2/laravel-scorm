@@ -384,6 +384,26 @@ class ScormManager
             ->firstOrFail();
     }
 
+    public function checkUserIsCompletedScorm($scormId, $userId) {
+
+        $completedSco    =   [];
+        $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
+
+        foreach ($scos as $sco) {
+            $scoTracking    =   ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->first();
+
+            if ($scoTracking && ($scoTracking->lesson_status == 'passed' || $scoTracking->lesson_status == 'completed')) {
+                $completedSco[] =   true;
+            }
+        }
+
+        if (count($completedSco) == $scos->count()) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     public function updateScoTracking($scoUuid, $userId, $data)
     {
         $tracking = $this->createScoTracking($scoUuid, $userId);
