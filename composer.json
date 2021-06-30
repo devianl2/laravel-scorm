@@ -12,7 +12,9 @@
     "require": {
         "php": "^7.4 || ^8.0",
         "doctrine/common": "^3.1",
-        "nesbot/carbon": "^2.42"
+        "nesbot/carbon": "^2.42",
+        "ext-zip": "*",
+        "ext-dom": "*"
     },
     "autoload": {
         "psr-4": {

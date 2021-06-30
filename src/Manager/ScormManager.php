@@ -131,7 +131,7 @@ class ScormManager
 
         $scormVersionElements = $dom->getElementsByTagName('schemaversion');
 
-        if (1 === $scormVersionElements->length) {
+        if ($scormVersionElements->length > 0) {
             switch ($scormVersionElements->item(0)->textContent) {
                 case '1.2':
                     $data['version'] = Scorm::SCORM_12;
