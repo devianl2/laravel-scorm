@@ -434,10 +434,12 @@ class ScormManager
                 $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
                 $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
                 $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
+                $entry  =   isset($data['cmi.core.entry']) ? $data['cmi.core.entry'] : null;
+                $exit  =   isset($data['cmi.core.exit']) ? $data['cmi.core.exit'] : null;
 
                 $tracking->setDetails($data);
-                $tracking->setEntry($data['cmi.core.entry']);
-                $tracking->setExitMode($data['cmi.core.exit']);
+                $tracking->setEntry($entry);
+                $tracking->setExitMode($exit);
                 $tracking->setLessonLocation($data['cmi.core.lesson_location']);
                 $tracking->setSessionTime($sessionTimeInHundredth);
 
