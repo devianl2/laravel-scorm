@@ -1,7 +1,6 @@
 <?php
 
-
-namespace Peopleaps\Scorm\Manager;
+namespace EscolaLms\Scorm\Services;
 
 use App\Models\User;
 use Carbon\Carbon;
@@ -23,8 +22,11 @@ use Peopleaps\Scorm\Model\ScormScoModel;
 use Peopleaps\Scorm\Model\ScormScoTrackingModel;
 use Ramsey\Uuid\Uuid;
 use ZipArchive;
+use EscolaLms\Scorm\Services\Contracts\ScormServiceContract;
+use Illuminate\Pagination\LengthAwarePaginator;
 
-class ScormManager
+
+class ScormService implements ScormServiceContract
 {
     /** @var ScormLib */
     private $scormLib;
@@ -35,12 +37,12 @@ class ScormManager
      * @param string $filesDir
      * @param string $uploadDir
      */
-    public function __construct(
-    ) {
+    public function __construct()
+    {
         $this->scormLib = new ScormLib();
     }
 
-    public function uploadScormArchive(UploadedFile $file, Model $model)
+    public function uploadScormArchive(UploadedFile $file)
     {
         // Checks if it is a valid scorm archive
         $scormData  =   null;
@@ -58,23 +60,23 @@ class ScormManager
             $scormData  =   $this->generateScorm($file);
         }
 
-        $oldModel   =   $model->scorm()->first(); // get old scorm data for deletion (If success to store new)
+        // $oldModel   =   $model->scorm()->first(); // get old scorm data for deletion (If success to store new)
 
         // save to db
         if ($scormData && is_array($scormData)) {
-
             $scorm  =   new ScormModel();
             $scorm->version =   $scormData['version'];
             $scorm->hash_name =   $scormData['hashName'];
             $scorm->origin_file =   $scormData['name'];
             $scorm->origin_file_mime =   $scormData['type'];
             $scorm->uuid =   $scormData['hashName'];
+            $scorm->save();
 
-            $scorm  =   $model->scorm()->save($scorm);
+            // $scorm  =   $model->scorm->save($scorm);
+            //$model->save();
 
             if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
                 foreach ($scormData['scos'] as $scoData) {
-
                     $scoParent    =   null;
                     if (!empty($scoData->scoParent)) {
                         $scoParent    =   ScormScoModel::where('uuid', $scoData->scoParent->uuid)->first();
@@ -106,10 +108,33 @@ class ScormManager
             }
         }
 
-        return  $scormData;
+        return  [
+            'scormData'=> $scormData,
+            'model' => $scorm
+        ];
     }
 
-    private function parseScormArchive(UploadedFile $file)
+    public function removeRecursion($data)
+    {
+
+        $scormData = $data['scormData'];
+        $scormData['scos'] = array_map(function ($row) {
+            if (isset($row->scoChildren)) {
+                $row->scoChildren = array_map(function ($child) {
+                    if (isset($child->scoParent)) {
+                        unset($child->scoParent);
+                    }
+                    return $child;
+                }, $row->scoChildren);
+            }
+            return $row;
+        }, $data['scormData']['scos']);
+
+        return array_merge($data, ['scormData' => $scormData]);
+
+    }
+
+    public function parseScormArchive(UploadedFile $file)
     {
         $data = [];
         $contents = '';
@@ -157,10 +182,10 @@ class ScormManager
         return $data;
     }
 
-    public function deleteScormData($model) {
+    public function deleteScormData($model)
+    {
         // Delete after the previous item is stored
         if ($model) {
-
             $oldScos    =   $model->scos()->get();
 
             // Delete all tracking associate with sco
@@ -179,8 +204,8 @@ class ScormManager
      * @param $folderHashedName
      * @return bool
      */
-    protected function deleteScormFolder($folderHashedName) {
-
+    protected function deleteScormFolder($folderHashedName)
+    {
         $response   =   Storage::disk('scorm')->deleteDirectory($folderHashedName);
 
         return $response;
@@ -196,18 +221,18 @@ class ScormManager
         $zip = new \ZipArchive();
         $zip->open($file);
 
-        if (!config()->has('filesystems.disks.'.config('scorm.disk').'.root')) {
+        if (!config()->has('filesystems.disks.' . config('scorm.disk') . '.root')) {
             throw new StorageNotFoundException();
         }
 
-        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root');
+        $rootFolder =   config('filesystems.disks.' . config('scorm.disk') . '.root');
 
         if (substr($rootFolder, -1) != '/') {
             // If end with xxx/
-            $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
+            $rootFolder =   config('filesystems.disks.' . config('scorm.disk') . '.root') . '/';
         }
 
-        $destinationDir = $rootFolder.$hashName; // file path
+        $destinationDir = $rootFolder . $hashName; // file path
 
         if (!File::isDirectory($destinationDir)) {
             File::makeDirectory($destinationDir, 0755, true, true);
@@ -225,25 +250,25 @@ class ScormManager
     private function generateScorm(UploadedFile $file)
     {
         $hashName = Uuid::uuid4();
-        $hashFileName = $hashName.'.zip';
+        $hashFileName = $hashName . '.zip';
         $scormData = $this->parseScormArchive($file);
-        $this->unzipScormArchive($file, $hashName);
+        $this->unzipScormArchive($file, 'scorm/' . $scormData['version'] . '/' . $hashName);
 
-        if (!config()->has('filesystems.disks.'.config('scorm.disk').'.root')) {
+        if (!config()->has('filesystems.disks.' . config('scorm.disk') . '.root')) {
             throw new StorageNotFoundException();
         }
 
-        $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root');
+        $rootFolder =   config('filesystems.disks.' . config('scorm.disk') . '.root');
 
         if (substr($rootFolder, -1) != '/') {
             // If end with xxx/
-            $rootFolder =   config('filesystems.disks.'.config('scorm.disk').'.root').'/';
+            $rootFolder =   config('filesystems.disks.' . config('scorm.disk') . '.root') . '/';
         }
 
-        $destinationDir = $rootFolder.$hashName; // file path
+        $destinationDir = 'scorm/' . $scormData['version'] . '/' . $rootFolder . $hashName; // file path
 
         // Move Scorm archive in the files directory
-        $finalFile = $file->move($destinationDir, $hashName.'.zip');
+        $finalFile = $file->move($destinationDir, $hashName . '.zip');
 
         return [
             'name' => $hashFileName, // to follow standard file data format
@@ -259,7 +284,8 @@ class ScormManager
      * @param $scormId
      * @return \Illuminate\Database\Eloquent\Builder[]|\Illuminate\Database\Eloquent\Collection
      */
-    public function getScos($scormId) {
+    public function getScos($scormId)
+    {
         $scos  =   ScormScoModel::with([
             'scorm'
         ])->where('scorm_id', $scormId)
@@ -273,7 +299,8 @@ class ScormManager
      * @param $scoUuid
      * @return null|\Illuminate\Database\Eloquent\Builder|Model
      */
-    public function getScoByUuid($scoUuid) {
+    public function getScoByUuid($scoUuid)
+    {
         $sco    =   ScormScoModel::with([
             'scorm'
         ])->where('uuid', $scoUuid)
@@ -282,7 +309,8 @@ class ScormManager
         return $sco;
     }
 
-    public function getUserResult($scoId, $userId) {
+    public function getUserResult($scoId, $userId)
+    {
         return ScormScoTrackingModel::where('sco_id', $scoId)->where('user_id', $userId)->first();
     }
 
@@ -375,7 +403,8 @@ class ScormManager
         return $scoTracking;
     }
 
-    public function findScoTrackingId($scoUuid, $scoTrackingUuid) {
+    public function findScoTrackingId($scoUuid, $scoTrackingUuid)
+    {
         return ScormScoTrackingModel::with([
             'sco'
         ])->whereHas('sco', function (Builder $query) use ($scoUuid) {
@@ -384,8 +413,8 @@ class ScormManager
             ->firstOrFail();
     }
 
-    public function checkUserIsCompletedScorm($scormId, $userId) {
-
+    public function checkUserIsCompletedScorm($scormId, $userId)
+    {
         $completedSco    =   [];
         $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
 
@@ -434,12 +463,10 @@ class ScormManager
                 $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
                 $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
                 $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
-                $entry  =   isset($data['cmi.core.entry']) ? $data['cmi.core.entry'] : null;
-                $exit  =   isset($data['cmi.core.exit']) ? $data['cmi.core.exit'] : null;
 
                 $tracking->setDetails($data);
-                $tracking->setEntry($entry);
-                $tracking->setExitMode($exit);
+                $tracking->setEntry($data['cmi.core.entry']);
+                $tracking->setExitMode($data['cmi.core.exit']);
                 $tracking->setLessonLocation($data['cmi.core.lesson_location']);
                 $tracking->setSessionTime($sessionTimeInHundredth);
 
@@ -536,7 +563,8 @@ class ScormManager
                     $bestStatus = $lessonStatus;
                 }
 
-                if (empty($tracking->getCompletionStatus())
+                if (
+                    empty($tracking->getCompletionStatus())
                     || ($completionStatus !== $tracking->getCompletionStatus() && $statusPriority[$completionStatus] > $statusPriority[$tracking->getCompletionStatus()])
                 ) {
                     // This is no longer needed as completionStatus and successStatus are merged together
@@ -628,7 +656,7 @@ class ScormManager
             $remainingTime %= 3600;
             $nbMinutes = (int) ($remainingTime / 60);
             $nbSeconds = $remainingTime % 60;
-            $result .= 'P'.$nbDays.'DT'.$nbHours.'H'.$nbMinutes.'M'.$nbSeconds.'S';
+            $result .= 'P' . $nbDays . 'DT' . $nbHours . 'H' . $nbMinutes . 'M' . $nbSeconds . 'S';
         }
 
         return $result;
@@ -649,5 +677,14 @@ class ScormManager
         }
 
         return $formattedValue;
+    }
+
+    public function listModels($per_page = 15, array $columns = ['*']): LengthAwarePaginator
+    {
+        $paginator = ScormModel::with(
+            ['scos']
+        )->select($columns)->paginate(intval($per_page));
+
+        return $paginator;
     }
 }
