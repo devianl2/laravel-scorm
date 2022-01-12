@@ -181,7 +181,7 @@ class ScormManager
      */
     protected function deleteScormFolder($folderHashedName) {
 
-        $response   =   Storage::disk('scorm')->deleteDirectory($folderHashedName);
+        $response   =   Storage::disk(config('scorm.disk'))->deleteDirectory($folderHashedName);
 
         return $response;
     }
