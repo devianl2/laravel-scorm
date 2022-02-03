@@ -58,48 +58,47 @@ class ScormManager
         }
 
         // save to db
-        if ($scormData && is_array($scormData)) 
+        if ($scormData && is_array($scormData))
             // Check if scom package already exists to drop old one.
             if (ScormModel::whereOriginFile($scormData['name'])->exists()) {
                 $this->deleteScormData(ScormModel::whereOriginFile($scormData['name'])->first());
             }
 
-            $scorm = ScormModel::updateOrCreate(['uuid' => $scormData['hashName']], [
-                'version'               =>  $scormData['version'],
-                'hash_name'             =>   $scormData['hashName'],
-                'origin_file'           =>   $scormData['name'],
-                'origin_file_mime'      =>   $scormData['type']
-            ]);
+        $scorm = ScormModel::updateOrCreate(['uuid' => $scormData['hashName']], [
+            'version'               =>  $scormData['version'],
+            'hash_name'             =>   $scormData['hashName'],
+            'origin_file'           =>   $scormData['name'],
+            'origin_file_mime'      =>   $scormData['type']
+        ]);
 
-            if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
-                foreach ($scormData['scos'] as $scoData) {
+        if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
+            foreach ($scormData['scos'] as $scoData) {
 
-                    $scoParent    =   null;
-                    if (!empty($scoData->scoParent)) {
-                        $scoParent    =   ScormScoModel::where('uuid', $scoData->scoParent->uuid)->first();
-                    }
-
-                    // Check if scom package already exists update or create when not exists.
-                    $sco = ScormScoModel::updateOrCreate([
-                        'scorm_id'      =>   $scorm->id,
-                        'uuid'          =>   $scoData->uuid
-                    ], [
-                        'sco_parent_id'                 =>   $scoParent ? $scoParent->id : null,
-                        'entry_url'                     =>   $scoData->entryUrl,
-                        'identifier'                    =>   $scoData->identifier,
-                        'title'                         =>   $scoData->title,
-                        'visible'                       =>   $scoData->visible,
-                        'sco_parameters'                =>   $scoData->parameters,
-                        'launch_data'                   =>   $scoData->launchData,
-                        'max_time_allowed'              =>   $scoData->maxTimeAllowed,
-                        'time_limit_action'             =>   $scoData->timeLimitAction,
-                        'block'                         =>   $scoData->block,
-                        'score_int'                     =>   $scoData->scoreToPassInt,
-                        'score_decimal'                 =>   $scoData->scoreToPassDecimal,
-                        'completion_threshold'          =>   $scoData->completionThreshold,
-                        'prerequisites'                 =>   $scoData->prerequisites,
-                    ]);
+                $scoParent    =   null;
+                if (!empty($scoData->scoParent)) {
+                    $scoParent    =   ScormScoModel::where('uuid', $scoData->scoParent->uuid)->first();
                 }
+
+                // Check if scom package already exists update or create when not exists.
+                $sco = ScormScoModel::updateOrCreate([
+                    'scorm_id'      =>   $scorm->id,
+                    'uuid'          =>   $scoData->uuid
+                ], [
+                    'sco_parent_id'                 =>   $scoParent ? $scoParent->id : null,
+                    'entry_url'                     =>   $scoData->entryUrl,
+                    'identifier'                    =>   $scoData->identifier,
+                    'title'                         =>   $scoData->title,
+                    'visible'                       =>   $scoData->visible,
+                    'sco_parameters'                =>   $scoData->parameters,
+                    'launch_data'                   =>   $scoData->launchData,
+                    'max_time_allowed'              =>   $scoData->maxTimeAllowed,
+                    'time_limit_action'             =>   $scoData->timeLimitAction,
+                    'block'                         =>   $scoData->block,
+                    'score_int'                     =>   $scoData->scoreToPassInt,
+                    'score_decimal'                 =>   $scoData->scoreToPassDecimal,
+                    'completion_threshold'          =>   $scoData->completionThreshold,
+                    'prerequisites'                 =>   $scoData->prerequisites,
+                ]);
             }
         }
 
