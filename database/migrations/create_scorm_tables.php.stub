@@ -97,19 +97,7 @@ class CreateScormTables extends Migration
      */
     public function down()
     {
-        $tableNames = config('scorm_sco_tracking_table');
-
-        if (empty($tableNames)) {
-            throw new \Exception('Error: Table not found.');
-        }
-
-        $tableNames = config('scorm_sco_table');
-
-        if (empty($tableNames)) {
-            throw new \Exception('Error: Table not found.');
-        }
-
-        $tableNames = config('scorm_table');
+        $tableNames = config('scorm.table_names');
 
         if (empty($tableNames)) {
             throw new \Exception('Error: Table not found.');

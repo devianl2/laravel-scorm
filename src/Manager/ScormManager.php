@@ -68,11 +68,11 @@ class ScormManager
             $this->deleteScormData($scorm);
         }
 
+        $scorm->uuid =   $scormData['uuid'];
+        $scorm->title =   $scormData['title'];
         $scorm->version =   $scormData['version'];
-        $scorm->hash_name =   $scormData['hashName'];
+        $scorm->entryUrl =   $scormData['entryUrl'];
         $scorm->origin_file =   $scormData['identifier'];
-        $scorm->origin_file_mime =   $scormData['type'];
-        $scorm->uuid =   $scormData['hashName'];
         $scorm->save();
 
         if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
@@ -134,6 +134,10 @@ class ScormManager
         } else {
             throw new InvalidScormArchiveException('invalid_scorm_manifest_identifier');
         }
+        $titles = $dom->getElementsByTagName('title');
+        if ($titles->length > 0) {
+            $data['title'] = $titles->item(0)->textContent;
+        }
 
         $scormVersionElements = $dom->getElementsByTagName('schemaversion');
         if ($scormVersionElements->length > 0) {
@@ -157,6 +161,8 @@ class ScormManager
         if (0 >= count($scos)) {
             throw new InvalidScormArchiveException('no_sco_in_scorm_archive_message');
         }
+
+        $data['entryUrl'] = $scos[0]->entryUrl;
         $data['scos'] = $scos;
 
         return $data;
@@ -182,7 +188,7 @@ class ScormManager
         }
         $model->scos()->delete(); // delete scos
         // Delete folder from server
-        $this->deleteScormFolder($model->hash_name);
+        $this->deleteScormFolder($model->title);
     }
 
     /**
@@ -212,10 +218,10 @@ class ScormManager
 
         return [
             'identifier' => $scormData['identifier'],
-            // 'name' => $hashFileName, // to follow standard file data format
-            'hashName' => $uuid,
-            'type' => $file->getMimeType(),
+            'uuid' => $uuid,
+            'title' => $scormData['title'], // to follow standard file data format
             'version' => $scormData['version'],
+            'entryUrl' => $scormData['entryUrl'],
             'scos' => $scormData['scos'],
         ];
     }
