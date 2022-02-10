@@ -16,6 +16,7 @@ use Peopleaps\Scorm\Model\ScormModel;
 use Peopleaps\Scorm\Model\ScormScoModel;
 use Peopleaps\Scorm\Model\ScormScoTrackingModel;
 use Illuminate\Support\Str;
+use Peopleaps\Scorm\Entity\Sco;
 use ZipArchive;
 
 class ScormManager
@@ -76,36 +77,47 @@ class ScormManager
         $scorm->save();
 
         if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
+            /** @var Sco $scoData */
             foreach ($scormData['scos'] as $scoData) {
-
-                $scoParent    =   null;
-                if (!empty($scoData->scoParent)) {
-                    $scoParent    =   ScormScoModel::where('uuid', $scoData->scoParent->uuid)->first();
+                $sco = $this->saveScormScos($scorm->id, $scoData);
+                if ($scoData->scoChildren) {
+                    foreach ($scoData->scoChildren as $scoChild) {
+                        $this->saveScormScos($scorm->id, $scoChild, $sco->id);
+                    }
                 }
-
-                // Check if scom package already exists update or create when not exists.
-                $sco    =   new ScormScoModel();
-                $sco->scorm_id  =   $scorm->id;
-                $sco->uuid  =   $scoData->uuid;
-                $sco->sco_parent_id  =   $scoParent ? $scoParent->id : null;
-                $sco->entry_url  =   $scoData->entryUrl;
-                $sco->identifier  =   $scoData->identifier;
-                $sco->title  =   $scoData->title;
-                $sco->visible  =   $scoData->visible;
-                $sco->sco_parameters  =   $scoData->parameters;
-                $sco->launch_data  =   $scoData->launchData;
-                $sco->max_time_allowed  =   $scoData->maxTimeAllowed;
-                $sco->time_limit_action  =   $scoData->timeLimitAction;
-                $sco->block  =   $scoData->block;
-                $sco->score_int  =   $scoData->scoreToPassInt;
-                $sco->score_decimal  =   $scoData->scoreToPassDecimal;
-                $sco->completion_threshold  =   $scoData->completionThreshold;
-                $sco->prerequisites  =   $scoData->prerequisites;
-                $sco->save();
             }
         }
 
         return  $scormData;
+    }
+
+    /**
+     * Save Scorm sco and it's nested children
+     * @param int $scorm_id scorm id.
+     * @param Sco $scoData Sco data to be store.
+     * @param int $sco_parent_id sco parent id for children
+     */
+    private function saveScormScos($scorm_id, $scoData, $sco_parent_id = null)
+    {
+        $sco    =   new ScormScoModel();
+        $sco->scorm_id  =   $scorm_id;
+        $sco->uuid  =   $scoData->uuid;
+        $sco->sco_parent_id  =   $sco_parent_id;
+        $sco->entry_url  =   $scoData->entryUrl;
+        $sco->identifier  =   $scoData->identifier;
+        $sco->title  =   $scoData->title;
+        $sco->visible  =   $scoData->visible;
+        $sco->sco_parameters  =   $scoData->parameters;
+        $sco->launch_data  =   $scoData->launchData;
+        $sco->max_time_allowed  =   $scoData->maxTimeAllowed;
+        $sco->time_limit_action  =   $scoData->timeLimitAction;
+        $sco->block  =   $scoData->block;
+        $sco->score_int  =   $scoData->scoreToPassInt;
+        $sco->score_decimal  =   $scoData->scoreToPassDecimal;
+        $sco->completion_threshold  =   $scoData->completionThreshold;
+        $sco->prerequisites  =   $scoData->prerequisites;
+        $sco->save();
+        return $sco;
     }
 
     private function parseScormArchive(UploadedFile $file)
