@@ -71,7 +71,7 @@ class ScormManager
         $scorm->uuid =   $scormData['uuid'];
         $scorm->title =   $scormData['title'];
         $scorm->version =   $scormData['version'];
-        $scorm->entryUrl =   $scormData['entryUrl'];
+        $scorm->entry_url =   $scormData['entryUrl'];
         $scorm->origin_file =   $scormData['identifier'];
         $scorm->save();
 
@@ -136,7 +136,7 @@ class ScormManager
         }
         $titles = $dom->getElementsByTagName('title');
         if ($titles->length > 0) {
-            $data['title'] = $titles->item(0)->textContent;
+            $data['title'] = Str::of($titles->item(0)->textContent)->trim('/n')->trim();
         }
 
         $scormVersionElements = $dom->getElementsByTagName('schemaversion');
@@ -188,7 +188,7 @@ class ScormManager
         }
         $model->scos()->delete(); // delete scos
         // Delete folder from server
-        $this->deleteScormFolder($model->title);
+        $this->deleteScormFolder($model->uuid);
     }
 
     /**
