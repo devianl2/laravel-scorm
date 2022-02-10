@@ -162,7 +162,7 @@ class ScormManager
             throw new InvalidScormArchiveException('no_sco_in_scorm_archive_message');
         }
 
-        $data['entryUrl'] = $scos[0]->entryUrl;
+        $data['entryUrl'] = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl;
         $data['scos'] = $scos;
 
         return $data;
