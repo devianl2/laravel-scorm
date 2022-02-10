@@ -67,7 +67,7 @@ class ScormDisk
     private function getDisk()
     {
         if (!config()->has('filesystems.disks.' . config('scorm.disk'))) {
-            throw new StorageNotFoundException();
+            throw new StorageNotFoundException('scorm_disk_not_define');
         }
         return Storage::disk(config('scorm.disk'));
     }
