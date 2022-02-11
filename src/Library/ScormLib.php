@@ -7,7 +7,7 @@ namespace Peopleaps\Scorm\Library;
 use DOMDocument;
 use Peopleaps\Scorm\Entity\Sco;
 use Peopleaps\Scorm\Exception\InvalidScormArchiveException;
-use Ramsey\Uuid\Uuid;
+use Illuminate\Support\Str;
 
 class ScormLib
 {
@@ -28,16 +28,20 @@ class ScormLib
             $organizations = $organizationsList->item(0);
             $organization = $organizations->firstChild;
 
-            if (!is_null($organizations->attributes)
-                && !is_null($organizations->attributes->getNamedItem('default'))) {
+            if (
+                !is_null($organizations->attributes)
+                && !is_null($organizations->attributes->getNamedItem('default'))
+            ) {
                 $defaultOrganization = $organizations->attributes->getNamedItem('default')->nodeValue;
             } else {
                 $defaultOrganization = null;
             }
             // No default organization is defined
             if (is_null($defaultOrganization)) {
-                while (!is_null($organization)
-                    && 'organization' !== $organization->nodeName) {
+                while (
+                    !is_null($organization)
+                    && 'organization' !== $organization->nodeName
+                ) {
                     $organization = $organization->nextSibling;
                 }
 
@@ -48,10 +52,12 @@ class ScormLib
             // A default organization is defined
             // Look for it
             else {
-                while (!is_null($organization)
+                while (
+                    !is_null($organization)
                     && ('organization' !== $organization->nodeName
                         || is_null($organization->attributes->getNamedItem('identifier'))
-                        || $organization->attributes->getNamedItem('identifier')->nodeValue !== $defaultOrganization)) {
+                        || $organization->attributes->getNamedItem('identifier')->nodeValue !== $defaultOrganization)
+                ) {
                     $organization = $organization->nextSibling;
                 }
 
@@ -82,7 +88,7 @@ class ScormLib
             if ('item' === $item->nodeName) {
                 $sco = new Sco();
                 $scos[] = $sco;
-                $sco->setUuid(Uuid::uuid4());
+                $sco->setUuid(Str::uuid());
                 $sco->setScoParent($parentSco);
                 $this->findAttrParams($sco, $item, $resources);
                 $this->findNodeParams($sco, $item->firstChild);
@@ -119,7 +125,7 @@ class ScormLib
                         throw new InvalidScormArchiveException('sco_resource_without_href_message');
                     }
                     $sco = new Sco();
-                    $sco->setUuid(Uuid::uuid4());
+                    $sco->setUuid(Str::uuid());
                     $sco->setBlock(false);
                     $sco->setVisible(true);
                     $sco->setIdentifier($identifier->nodeValue);
@@ -195,10 +201,12 @@ class ScormLib
                 case 'adlcp:timeLimitAction':
                     $action = strtolower($item->nodeValue);
 
-                    if ('exit,message' === $action
+                    if (
+                        'exit,message' === $action
                         || 'exit,no message' === $action
                         || 'continue,message' === $action
-                        || 'continue,no message' === $action) {
+                        || 'continue,no message' === $action
+                    ) {
                         $sco->setTimeLimitAction($action);
                     }
                     break;
