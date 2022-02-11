@@ -44,7 +44,7 @@ php artisan migrate
 ```
 
 ## Step 5 (Optional):
-update SCORM config under config/scorm
+***Update SCORM config under `config/scorm`***
 - update scorm table names.
 - update SCORM disk and configure disk @see config/filesystems.php
 ```
@@ -70,4 +70,56 @@ update SCORM config under config/scorm
         ],
         .....
      ]
+```
+***Update SCORM transaltions under `resources/lang/en-US`***
+- SCORM runtime errors exceptions handler, *(Check next example)*
+- Copy and translate error msg with key for other locale as you wish.
+  
+*After finishing don't forget to run `php artisan config:cache`*
+
+  
+
+
+## Step 6 (Optional):
+
+**Usage**
+```
+class ScormController extends BaseController
+{
+    /** @var ScormManager $scormManager */
+    private $scormManager;
+    /**
+     * ScormController constructor.
+     * @param ScormManager $scormManager
+     */
+    public function __construct(ScormManager $scormManager)
+    {
+        $this->scormManager = $scormManager;
+    }
+
+    public function show($id)
+    {
+        $item = ScormModel::with('scos')->findOrFail($id);
+        // response helper function from base controller reponse json.
+        return $this->respond($item);
+    }
+
+    public function store(ScormRequest $request)
+    {
+        try {
+            $scorm = $this->scormManager->uploadScormArchive($request->file('file'));
+            // handle scorm runtime error msg
+        } catch (InvalidScormArchiveException | StorageNotFoundException $ex) {
+            return $this->respondCouldNotCreateResource(trans('scorm.' .  $ex->getMessage()));
+        }
+
+        // response helper function from base controller reponse json.
+        return $this->respond(ScormModel::with('scos')->whereUuid($scorm['uuid'])->first());
+    }
+
+    public function saveProgress(Request $request)
+    {
+        // TODO save user progress...
+    }
+}
 ```
