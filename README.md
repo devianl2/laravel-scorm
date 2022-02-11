@@ -32,42 +32,8 @@ php artisan vendor:publish --provider="Peopleaps\Scorm\ScormServiceProvider"
 ```
 
 ## Step 3:
-Run config cache for update cached configuration
-```sh
-php artisan config:cache
-```
-
-## Step 4:
 Migrate file to database
 ```sh
 php artisan migrate
 ```
 
-## Step 5 (Optional):
-update SCORM config under config/scorm
-- update scorm table names.
-- update SCORM disk and configure disk @see config/filesystems.php
-```
-    'disk'  =>  'scorm-local',
-    'disk'  =>  'scorm-s3',
-
- // @see config/filesystems.php
-     'disks' => [
-         .....
-         'scorm-local' => [
-            'driver'     => 'local',
-            'root'       =>  env('SCORM_ROOT_DIR'), // set root dir
-            'visibility' => 'public',
-        ],
-
-        's3-scorm' => [
-            'driver' => 's3',
-            'root'   => env('SCORM_ROOT_DIR'), // set root dir
-            'key'    => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_SCORM_BUCKET'),
-        ],
-        .....
-     ]
-```

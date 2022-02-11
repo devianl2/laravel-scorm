@@ -3,6 +3,9 @@
 
 namespace Peopleaps\Scorm\Entity;
 
+
+use Doctrine\Common\Collections\ArrayCollection;
+
 class Scorm
 {
     const SCORM_12 = 'scorm_12';
@@ -10,9 +13,8 @@ class Scorm
 
     public $uuid;
     public $id;
-    public $title;
     public $version;
-    public $entryUrl;
+    public $hashName;
     public $ratio = 56.25;
     public $scos;
     public $scoSerializer;
@@ -68,33 +70,17 @@ class Scorm
     /**
      * @return string
      */
-    public function getTitle()
+    public function getHashName()
     {
-        return $this->title;
+        return $this->hashName;
     }
 
     /**
-     * @param string $title
+     * @param string $hashName
      */
-    public function setTitle($title)
+    public function setHashName($hashName)
     {
-        $this->title = $title;
-    }
-
-    /**
-     * @return string
-     */
-    public function getEntryUrl()
-    {
-        return $this->entryUrl;
-    }
-
-    /**
-     * @param string $title
-     */
-    public function setEntryUrl($entryUrl)
-    {
-        $this->entryUrl = $entryUrl;
+        $this->hashName = $hashName;
     }
 
     /**
@@ -145,8 +131,7 @@ class Scorm
         return [
             'id' => $scorm->getUuid(),
             'version' => $scorm->getVersion(),
-            'title' => $scorm->getTitle(),
-            'entryUrl' => $scorm->getEntryUrl(),
+            'hashName' => $scorm->getHashName(),
             'ratio' => $scorm->getRatio(),
             'scos' => $this->serializeScos($scorm),
         ];
