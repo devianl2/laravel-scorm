@@ -71,15 +71,13 @@ php artisan migrate
         .....
      ]
 ```
-***Update SCORM transaltions under `resources/lang/en-US`***
+***Update SCORM translations under `resources/lang/en-US/scorm.php`***
 - SCORM runtime errors exceptions handler, *(Check next example)*
 - Copy and translate error msg with key for other locale as you wish.
   
 *After finishing don't forget to run `php artisan config:cache`*
 
   
-
-
 ## Step 6 (Optional):
 
 **Usage**
