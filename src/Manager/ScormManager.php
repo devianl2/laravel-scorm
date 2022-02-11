@@ -88,7 +88,7 @@ class ScormManager
             }
         }
 
-        return  $scormData;
+        return  $scorm;
     }
 
     /**
