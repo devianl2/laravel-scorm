@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 class ScormModel extends Model
 {
 
-    public static function whereOriginFile($identifier)
+    public function whereOriginFile($identifier)
     {
         return $this->where('origin_file', $identifier);
     }
