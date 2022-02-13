@@ -60,6 +60,8 @@ class ScormManager
             throw new InvalidScormArchiveException('invalid_scorm_data');
         }
 
+        // Magic method: https://laravel.com/docs/5.0/queries#advanced-wheres
+        // https://github.com/laravel/framework/blob/9.x/src/Illuminate/Database/Query/Builder.php
         $scorm = ScormModel::whereOriginFile($scormData['identifier']);
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
