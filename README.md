@@ -121,3 +121,10 @@ class ScormController extends BaseController
     }
 }
 ```
+
+***Upgrade from version 2 to 3:***
+Update your Scorm table:
+- Add entry_url (varchar 191 / nullable)
+- Change hash_name to title
+- Remove origin_file_mime field
+
