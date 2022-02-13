@@ -9,11 +9,6 @@ use Illuminate\Database\Eloquent\Model;
 class ScormModel extends Model
 {
 
-    public static function whereOriginFile($identifier)
-    {
-        return $this->where('origin_file', $identifier);
-    }
-
     public function getTable()
     {
         return config('scorm.table_names.scorm_table', parent::getTable());
