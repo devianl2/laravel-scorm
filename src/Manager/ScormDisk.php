@@ -4,8 +4,10 @@ namespace Peopleaps\Scorm\Manager;
 
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
+use Peopleaps\Scorm\Entity\Scorm;
 use Peopleaps\Scorm\Exception\StorageNotFoundException;
 use ZipArchive;
+use ZipStream\ZipStream;
 
 class ScormDisk
 {
@@ -40,6 +42,20 @@ class ScormDisk
         }
 
         return true;
+    }
+
+    public function download(Scorm $scorm)
+    {
+        return response()->stream(function () use ($scorm) {
+            // enable output of HTTP headers
+            // $options = new ZipStream\Option\Archive();
+            // $options->setSendHttpHeaders(true);
+            $zip = new ZipStream($scorm->title . ".zip");
+            /** @var FilesystemAdapter $disk */
+            $disk = $this->getDisk();
+            $zip->addFileFromStream($scorm->title, $disk->readStream($scorm->uuid));
+            $zip->finish();
+        });
     }
 
     /**

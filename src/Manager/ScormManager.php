@@ -667,4 +667,9 @@ class ScormManager
 
         return $formattedValue;
     }
+
+
+    public function download(Scorm $scorm){
+        return $this->scormDisk->download($scorm);
+    }
 }
