@@ -6,6 +6,13 @@ namespace Peopleaps\Scorm\Model;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property int $id
+ * @property string $uuid
+ * @property string $title
+ * @property string $version
+ * @property string $entryUrl
+ */
 class ScormModel extends Model
 {
     public function getTable()

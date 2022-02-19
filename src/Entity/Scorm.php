@@ -3,6 +3,8 @@
 
 namespace Peopleaps\Scorm\Entity;
 
+use Peopleaps\Scorm\Model\ScormModel;
+
 class Scorm
 {
     const SCORM_12 = 'scorm_12';
@@ -16,6 +18,17 @@ class Scorm
     public $ratio = 56.25;
     public $scos;
     public $scoSerializer;
+
+    public static function fromModel(ScormModel $model)
+    {
+        $instance = new self();
+        $instance->setId($model->id);
+        $instance->setUuid($model->uuid);
+        $instance->setTitle($model->title);
+        $instance->setVersion($model->version);
+        $instance->setEntryUrl($model->entryUrl);
+        return $instance;
+    }
 
     /**
      * @return string
