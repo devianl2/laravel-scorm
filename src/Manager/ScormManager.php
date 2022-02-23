@@ -98,7 +98,7 @@ class ScormManager
          *  Handle dynamic method calls into the method.
          *  return $this->dynamicWhere($method, $parameters);
          **/
-        $scorm = ScormModel::whereOriginFile($scormData['identifier']);
+        $scorm = ScormModel::whereOriginFile($filename);
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
             $scorm = new ScormModel();
