@@ -2,6 +2,7 @@
 
 namespace Peopleaps\Scorm\Manager;
 
+use Exception;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -45,14 +46,18 @@ class ScormDisk
      */
     public function readScormArchive($file, callable $fn)
     {
-        if (Storage::exists($file)) {
-            Storage::delete($file);
+        try {
+            if (Storage::exists($file)) {
+                Storage::delete($file);
+            }
+            Storage::writeStream($file, $this->getArchiveDisk()->readStream($file));
+            $path = Storage::path($file);
+            call_user_func($fn, $path);
+            unlink($path); // delete temp package
+            Storage::deleteDirectory(dirname($file)); // delete temp dir
+        } catch (Exception $ex) {
+            throw new StorageNotFoundException('scorm_archive_not_found');
         }
-        Storage::writeStream($file, $this->getArchiveDisk()->readStream($file));
-        $path = Storage::path($file);
-        call_user_func($fn, $path);
-        unlink($path); // delete temp package
-        Storage::deleteDirectory(dirname($file)); // delete temp dir
     }
 
     /**

@@ -20,7 +20,16 @@ class ScormModel extends Model
         return config('scorm.table_names.scorm_table', parent::getTable());
     }
 
-    public function scos() {
+    public function scos()
+    {
         return $this->hasMany(ScormScoModel::class, 'scorm_id', 'id');
+    }
+
+    /**
+     * @return HasOne
+     */
+    public function resource()
+    {
+        return $this->hasOne(config('scorm.table_names.resource_table'));
     }
 }

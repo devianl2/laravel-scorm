@@ -3,10 +3,11 @@
 return [
 
     'table_names' =>  [
-        'user_table'   =>  'users', // user table name on main LMS app.
-        'scorm_table'   =>  'scorm',
-        'scorm_sco_table'   =>  'scorm_sco',
-        'scorm_sco_tracking_table'   =>  'scorm_sco_tracking',
+        'user_table'                    =>  'users', // user table name on main LMS app.
+        'resource_table'                =>  'resource', // resource table on LMS app.
+        'scorm_table'                   =>  'scorm',
+        'scorm_sco_table'               =>  'scorm_sco',
+        'scorm_sco_tracking_table'      =>  'scorm_sco_tracking',
     ],
     /**
      * Scorm directory. You may create a custom path in file system
