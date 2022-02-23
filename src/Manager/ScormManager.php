@@ -17,7 +17,6 @@ use Peopleaps\Scorm\Model\ScormScoModel;
 use Peopleaps\Scorm\Model\ScormScoTrackingModel;
 use Illuminate\Support\Str;
 use Peopleaps\Scorm\Entity\Sco;
-use ZipArchive;
 
 class ScormManager
 {
@@ -38,28 +37,53 @@ class ScormManager
         $this->scormDisk = new ScormDisk();
     }
 
+    public function uploadScormFromUri($file)
+    {
+        $scorm = null;
+        $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file) {
+            $this->validatePackage($path);
+            $uuid = dirname($file);
+            $filename = basename($file);
+            $scorm = $this->saveScorm($path, $uuid, $filename);
+        });
+        return $scorm;
+    }
+
     public function uploadScormArchive(UploadedFile $file)
     {
-        // Checks if it is a valid scorm archive
-        $scormData  =   null;
-        $zip = new ZipArchive();
-        $openValue = $zip->open($file);
+        $this->validatePackage($file);
+        return $this->saveScorm($file, Str::uuid(), $file->getClientOriginalName());
+    }
 
+    /**
+     *  Checks if it is a valid scorm archive
+     * 
+     * @param string|UploadedFile $file zip.       
+     */
+    private function validatePackage($file)
+    {
+        $zip = new \ZipArchive();
+        $openValue = $zip->open($file);
         $isScormArchive = (true === $openValue) && $zip->getStream('imsmanifest.xml');
 
         $zip->close();
-
         if (!$isScormArchive) {
             throw new InvalidScormArchiveException('invalid_scorm_archive_message');
-        } else {
-            $scormData  =   $this->generateScorm($file);
         }
+    }
 
+    /**
+     *  Save scom data
+     * 
+     * @param string|UploadedFile $file zip.       
+     */
+    private function saveScorm($file, $uuid, $filename)
+    {
+        $scormData  =   $this->generateScorm($file, $uuid);
         // save to db
         if (is_null($scormData) || !is_array($scormData)) {
             throw new InvalidScormArchiveException('invalid_scorm_data');
         }
-
         /**
          * ScormModel::whereOriginFile Query Builder style equals ScormModel::where('origin_file',$value)
          * 
@@ -70,18 +94,7 @@ class ScormManager
          * Examples: 
          * 
          * $admin = DB::table('users')->whereId(1)->first();
-         * 
-         * $john = DB::table('users')
-         *         ->whereIdAndEmail(2, 'john@doe.com')
-         *         ->first();
-         * 
-         * $jane = DB::table('users')
-         *              ->whereNameOrAge('Jane', 22)
-         *              ->first();
-         * 
-         * 
          * From laravel framework https://github.com/laravel/framework/blob/9.x/src/Illuminate/Database/Query/Builder.php'
-         * 
          *  Handle dynamic method calls into the method.
          *  return $this->dynamicWhere($method, $parameters);
          **/
@@ -93,12 +106,12 @@ class ScormManager
             $scorm = $scorm->first();
             $this->deleteScormData($scorm);
         }
-
         $scorm->uuid =   $scormData['uuid'];
         $scorm->title =   $scormData['title'];
         $scorm->version =   $scormData['version'];
         $scorm->entry_url =   $scormData['entryUrl'];
-        $scorm->origin_file =   $scormData['identifier'];
+        $scorm->identifier =   $scormData['identifier'];
+        $scorm->origin_file =   $filename;
         $scorm->save();
 
         if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
@@ -145,7 +158,10 @@ class ScormManager
         return $sco;
     }
 
-    private function parseScormArchive(UploadedFile $file)
+    /**
+     * @param string|UploadedFile $file zip.       
+     */
+    private function parseScormArchive($file)
     {
         $data = [];
         $contents = '';
@@ -238,20 +254,19 @@ class ScormManager
     }
 
     /**
-     * @param UploadedFile $file
+     * @param string|UploadedFile $file zip.       
      * @return array
      * @throws InvalidScormArchiveException
      */
-    private function generateScorm(UploadedFile $file)
+    private function generateScorm($file, $uuid)
     {
-        $uuid = Str::uuid();
         $scormData = $this->parseScormArchive($file);
         /**
          * Unzip a given ZIP file into the web resources directory.
          *
          * @param string $hashName name of the destination directory
          */
-        $this->scormDisk->unzip($file, $uuid);
+        $this->scormDisk->unzipper($file, $uuid);
 
         return [
             'identifier' => $scormData['identifier'],
@@ -666,10 +681,5 @@ class ScormManager
         }
 
         return $formattedValue;
-    }
-
-
-    public function download(Scorm $scorm){
-        return $this->scormDisk->download($scorm);
     }
 }
