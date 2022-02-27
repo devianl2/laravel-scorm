@@ -24,12 +24,4 @@ class ScormModel extends Model
     {
         return $this->hasMany(ScormScoModel::class, 'scorm_id', 'id');
     }
-
-    /**
-     * @return HasOne
-     */
-    public function resource()
-    {
-        return $this->hasOne(config('scorm.table_names.resource_table'));
-    }
 }
