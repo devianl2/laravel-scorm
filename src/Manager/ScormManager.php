@@ -300,9 +300,8 @@ class ScormManager
      */
     public function getScoByUuid($scoUuid)
     {
-        $sco    =   ScormScoModel::with([
-            'scorm'
-        ])->where('uuid', $scoUuid)
+        $sco    =   ScormScoModel::with(['scorm'])
+            ->where('uuid', $scoUuid)
             ->firstOrFail();
 
         return $sco;
@@ -313,7 +312,7 @@ class ScormManager
         return ScormScoTrackingModel::where('sco_id', $scoId)->where('user_id', $userId)->first();
     }
 
-    public function createScoTracking($scoUuid, $userId = null)
+    public function createScoTracking($scoUuid, $userId = null, $userName = null)
     {
         $sco    =   ScormScoModel::where('uuid', $scoUuid)->firstOrFail();
 
@@ -321,6 +320,7 @@ class ScormManager
         $scoTracking = new ScoTracking();
         $scoTracking->setSco($sco->toArray());
 
+        $cmi = null;
         switch ($version) {
             case Scorm::SCORM_12:
                 $scoTracking->setLessonStatus('not attempted');
@@ -338,16 +338,29 @@ class ScormManager
                 } else {
                     $scoTracking->setIsLocked(true);
                 }
+                $cmi = [
+                    'cmi.core.entry' => $scoTracking->getEntry(),
+                    'cmi.core.student_id' => $userId,
+                    'cmi.core.student_name' => $userName,
+                ];
+
                 break;
             case Scorm::SCORM_2004:
                 $scoTracking->setTotalTimeString('PT0S');
                 $scoTracking->setCompletionStatus('unknown');
                 $scoTracking->setLessonStatus('unknown');
                 $scoTracking->setIsLocked(false);
+                $cmi = [
+                    'cmi.entry' => 'ab-initio',
+                    'cmi.learner_id' =>  $userId,
+                    'cmi.learner_name' => $userName,
+                    'cmi.scaled_passing_score' => 0.5,
+                ];
                 break;
         }
 
         $scoTracking->setUserId($userId);
+        $scoTracking->setDetails($cmi);
 
         // Create a new tracking model
         $storeTracking  =   ScormScoTrackingModel::firstOrCreate([

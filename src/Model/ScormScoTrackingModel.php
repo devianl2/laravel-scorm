@@ -35,12 +35,17 @@ class ScormScoTrackingModel extends Model
         'updated_at'
     ];
 
+    protected $casts = [
+        'details'        => 'array',
+    ];
+
     public function getTable()
     {
         return config('scorm.table_names.scorm_sco_tracking_table', parent::getTable());
     }
 
-    public function sco() {
+    public function sco()
+    {
         return $this->belongsTo(ScormScoModel::class, 'sco_id', 'id');
     }
 }
