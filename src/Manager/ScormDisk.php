@@ -53,10 +53,19 @@ class ScormDisk
             Storage::writeStream($file, $this->getArchiveDisk()->readStream($file));
             $path = Storage::path($file);
             call_user_func($fn, $path);
-            unlink($path); // delete temp package
-            Storage::deleteDirectory(dirname($file)); // delete temp dir
+            // Clean local resources
+            $this->clean($file);
         } catch (Exception $ex) {
             throw new StorageNotFoundException('scorm_archive_not_found');
+        }
+    }
+
+    private function clean($file)
+    {
+        try {
+            Storage::delete($file);
+            Storage::deleteDirectory(dirname($file)); // delete temp dir
+        } catch (Exception $ex) {
         }
     }
 
@@ -64,9 +73,34 @@ class ScormDisk
      * @param string $directory
      * @return bool
      */
-    public function deleteScormFolder($folderHashedName)
+    public function deleteScorm($uuid)
     {
-        return $this->getDisk()->deleteDirectory($folderHashedName);
+        $this->deleteScormArchive($uuid); // try to delete archive if exists.
+        return $this->deleteScormContent($uuid);
+    }
+
+    /**
+     * @param string $directory
+     * @return bool
+     */
+    private function deleteScormContent($folderHashedName)
+    {
+        try {
+            return $this->getDisk()->deleteDirectory($folderHashedName);
+        } catch (Exception $ex) {
+        }
+    }
+
+    /**
+     * @param string $directory
+     * @return bool
+     */
+    private function deleteScormArchive($uuid)
+    {
+        try {
+            return $this->getArchiveDisk()->deleteDirectory($uuid);
+        } catch (Exception $ex) {
+        }
     }
 
     /**

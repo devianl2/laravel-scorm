@@ -24,6 +24,8 @@ class ScormManager
     private $scormLib;
     /** @var ScormDisk */
     private $scormDisk;
+    /** @var string $uuid */
+    private $uuid;
 
     /**
      * Constructor.
@@ -41,18 +43,17 @@ class ScormManager
     {
         $scorm = null;
         $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file) {
-            $this->validatePackage($path);
-            $uuid = dirname($file);
+            $this->uuid = dirname($file);
             $filename = basename($file);
-            $scorm = $this->saveScorm($path, $uuid, $filename);
+            $scorm = $this->saveScorm($path, $filename);
         });
         return $scorm;
     }
 
     public function uploadScormArchive(UploadedFile $file)
     {
-        $this->validatePackage($file);
-        return $this->saveScorm($file, Str::uuid(), $file->getClientOriginalName());
+        $this->uuid = Str::uuid();
+        return $this->saveScorm($file, $file->getClientOriginalName());
     }
 
     /**
@@ -68,7 +69,7 @@ class ScormManager
 
         $zip->close();
         if (!$isScormArchive) {
-            throw new InvalidScormArchiveException('invalid_scorm_archive_message');
+            $this->onError('invalid_scorm_archive_message');
         }
     }
 
@@ -77,12 +78,13 @@ class ScormManager
      * 
      * @param string|UploadedFile $file zip.       
      */
-    private function saveScorm($file, $uuid, $filename)
+    private function saveScorm($file, $filename)
     {
-        $scormData  =   $this->generateScorm($file, $uuid);
+        $this->validatePackage($file);
+        $scormData  =   $this->generateScorm($file);
         // save to db
         if (is_null($scormData) || !is_array($scormData)) {
-            throw new InvalidScormArchiveException('invalid_scorm_data');
+            $this->onError('invalid_scorm_data');
         }
         /**
          * ScormModel::whereOriginFile Query Builder style equals ScormModel::where('origin_file',$value)
@@ -178,14 +180,14 @@ class ScormManager
         $dom = new DOMDocument();
 
         if (!$dom->loadXML($contents)) {
-            throw new InvalidScormArchiveException('cannot_load_imsmanifest_message');
+            $this->onError('cannot_load_imsmanifest_message');
         }
 
         $manifest = $dom->getElementsByTagName('manifest')->item(0);
         if (!is_null($manifest->attributes->getNamedItem('identifier'))) {
             $data['identifier'] = $manifest->attributes->getNamedItem('identifier')->nodeValue;
         } else {
-            throw new InvalidScormArchiveException('invalid_scorm_manifest_identifier');
+            $this->onError('invalid_scorm_manifest_identifier');
         }
         $titles = $dom->getElementsByTagName('title');
         if ($titles->length > 0) {
@@ -204,15 +206,15 @@ class ScormManager
                     $data['version'] = Scorm::SCORM_2004;
                     break;
                 default:
-                    throw new InvalidScormArchiveException('invalid_scorm_version_message');
+                    $this->onError('invalid_scorm_version_message');
             }
         } else {
-            throw new InvalidScormArchiveException('invalid_scorm_version_message');
+            $this->onError('invalid_scorm_version_message');
         }
         $scos = $this->scormLib->parseOrganizationsNode($dom);
 
         if (0 >= count($scos)) {
-            throw new InvalidScormArchiveException('no_sco_in_scorm_archive_message');
+            $this->onError('no_sco_in_scorm_archive_message');
         }
 
         $data['entryUrl'] = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl;
@@ -250,7 +252,7 @@ class ScormManager
      */
     protected function deleteScormFolder($folderHashedName)
     {
-        return $this->scormDisk->deleteScormFolder($folderHashedName);
+        return $this->scormDisk->deleteScorm($folderHashedName);
     }
 
     /**
@@ -258,7 +260,7 @@ class ScormManager
      * @return array
      * @throws InvalidScormArchiveException
      */
-    private function generateScorm($file, $uuid)
+    private function generateScorm($file)
     {
         $scormData = $this->parseScormArchive($file);
         /**
@@ -266,11 +268,11 @@ class ScormManager
          *
          * @param string $hashName name of the destination directory
          */
-        $this->scormDisk->unzipper($file, $uuid);
+        $this->scormDisk->unzipper($file, $this->uuid);
 
         return [
             'identifier' => $scormData['identifier'],
-            'uuid' => $uuid,
+            'uuid' => $this->uuid,
             'title' => $scormData['title'], // to follow standard file data format
             'version' => $scormData['version'],
             'entryUrl' => $scormData['entryUrl'],
@@ -694,5 +696,14 @@ class ScormManager
         }
 
         return $formattedValue;
+    }
+
+    /**
+     * Clean resources and throw exception.
+     */
+    private function onError($msg)
+    {
+        $this->scormDisk->deleteScorm($this->uuid);
+        throw new InvalidScormArchiveException($msg);
     }
 }
