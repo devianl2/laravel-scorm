@@ -28,15 +28,22 @@ class ScormDisk
 
         /** @var FilesystemAdapter $disk */
         $disk = $this->getDisk();
+        $createDir = 'createDir';
+        $putStream = 'putStream';
+
+        if (!method_exists($disk, $createDir)) {
+            $createDir = 'createDirectory';
+            $putStream = 'writeStream';
+        }
 
         for ($i = 0; $i < $zipArchive->numFiles; ++$i) {
             $zipEntryName = $zipArchive->getNameIndex($i);
             $destination = $path . DIRECTORY_SEPARATOR . $this->cleanPath($zipEntryName);
             if ($this->isDirectory($zipEntryName)) {
-                $disk->createDir($destination);
+                $disk->$createDir($destination);
                 continue;
             }
-            $disk->putStream($destination, $zipArchive->getStream($zipEntryName));
+            $disk->$putStream($destination, $zipArchive->getStream($zipEntryName));
         }
 
         return true;
