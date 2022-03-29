@@ -424,7 +424,7 @@ class ScormManager
                 $lessonStatus = isset($data['cmi.core.lesson_status']) ? $data['cmi.core.lesson_status'] : 'unknown';
                 $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
                 $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
-                $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
+                $progression = !empty($scoreRaw) ? floatval($scoreRaw) : 0;
                 $entry  =   isset($data['cmi.core.entry']) ? $data['cmi.core.entry'] : null;
                 $exit  =   isset($data['cmi.core.exit']) ? $data['cmi.core.exit'] : null;
                 $lessonLocation =   isset($data['cmi.core.lesson_location']) ? $data['cmi.core.lesson_location'] : null;
