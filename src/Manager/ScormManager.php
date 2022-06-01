@@ -578,6 +578,14 @@ class ScormManager
         return $updateResult;
     }
 
+    public function resetUserData($scormId, $userId) {
+        $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
+
+        foreach ($scos as $sco) {
+            $scoTracking    =   ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->delete();
+        }
+    }
+
     private function convertTimeInHundredth($time)
     {
         if ($time != null) {
