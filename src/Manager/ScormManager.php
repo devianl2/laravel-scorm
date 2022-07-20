@@ -556,7 +556,7 @@ class ScormManager
             ->where('sco_id', $sco['id'])
             ->firstOrFail();
 
-        if ($updateResult->progression != 100 &&
+        if ($updateResult->progression <= 100 &&
             ($updateResult->lesson_status != 'completed' &&
                 $updateResult->lesson_status != 'passed' &&
                 $updateResult->lesson_status != 'browsed'))
