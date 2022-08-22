@@ -5,6 +5,7 @@ namespace Peopleaps\Scorm\Manager;
 use Exception;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Peopleaps\Scorm\Exception\StorageNotFoundException;
 
@@ -56,6 +57,7 @@ class ScormDisk
             // Clean local resources
             $this->clean($file);
         } catch (Exception $ex) {
+            Log::error($ex->getMessage());
             throw new StorageNotFoundException('scorm_archive_not_found');
         }
     }
@@ -66,6 +68,7 @@ class ScormDisk
             Storage::delete($file);
             Storage::deleteDirectory(dirname($file)); // delete temp dir
         } catch (Exception $ex) {
+            Log::error($ex->getMessage());
         }
     }
 
@@ -88,6 +91,7 @@ class ScormDisk
         try {
             return $this->getDisk()->deleteDirectory($folderHashedName);
         } catch (Exception $ex) {
+            Log::error($ex->getMessage());
         }
     }
 
@@ -100,6 +104,7 @@ class ScormDisk
         try {
             return $this->getArchiveDisk()->deleteDirectory($uuid);
         } catch (Exception $ex) {
+            Log::error($ex->getMessage());
         }
     }
 
