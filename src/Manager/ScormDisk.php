@@ -37,7 +37,6 @@ class ScormDisk
             }
             return true;
         }
-
         return false;
     }
 

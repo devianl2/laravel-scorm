@@ -86,6 +86,7 @@ class ScormManager
         if (is_null($scormData) || !is_array($scormData)) {
             $this->onError('invalid_scorm_data');
         }
+
         /**
          * ScormModel::whereOriginFile Query Builder style equals ScormModel::where('origin_file',$value)
          * 
@@ -101,6 +102,7 @@ class ScormManager
          *  return $this->dynamicWhere($method, $parameters);
          **/
         $scorm = ScormModel::whereOriginFile($filename);
+        
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
             $scorm = new ScormModel();
@@ -128,7 +130,7 @@ class ScormManager
             }
         }
 
-        return  $scormData;
+        return  $scorm;
     }
 
     /**
@@ -477,7 +479,7 @@ class ScormManager
                 $lessonStatus = isset($data['cmi.core.lesson_status']) ? $data['cmi.core.lesson_status'] : 'unknown';
                 $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
                 $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
-                $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
+                $progression = !empty($scoreRaw) ? floatval($scoreRaw) : 0;
                 $entry  =   isset($data['cmi.core.entry']) ? $data['cmi.core.entry'] : null;
                 $exit  =   isset($data['cmi.core.exit']) ? $data['cmi.core.exit'] : null;
                 $lessonLocation =   isset($data['cmi.core.lesson_location']) ? $data['cmi.core.lesson_location'] : null;
@@ -629,6 +631,14 @@ class ScormManager
         $updateResult->save();
 
         return $updateResult;
+    }
+
+    public function resetUserData($scormId, $userId) {
+        $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
+
+        foreach ($scos as $sco) {
+            $scoTracking    =   ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->delete();
+        }
     }
 
     private function convertTimeInHundredth($time)

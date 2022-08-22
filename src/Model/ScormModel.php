@@ -15,6 +15,34 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ScormModel extends Model
 {
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
+    protected $fillable = [
+        'id',
+        'resource_id',
+        'resource_type',
+        'title',
+        'origin_file',
+        'version',
+        'ratio',
+        'uuid',
+        'entry_url',
+        'created_at',
+        'updated_at',
+    ];
+
+    /**
+     * Get the parent resource model (user or post).
+     */
+    public function resourceable()
+    {
+        return $this->morphTo(__FUNCTION__, 'resource_type', 'resource_id');
+    }
+
     public function getTable()
     {
         return config('scorm.table_names.scorm_table', parent::getTable());
