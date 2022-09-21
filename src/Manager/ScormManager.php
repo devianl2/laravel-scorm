@@ -17,7 +17,6 @@ use Peopleaps\Scorm\Model\ScormScoModel;
 use Peopleaps\Scorm\Model\ScormScoTrackingModel;
 use Illuminate\Support\Str;
 use Peopleaps\Scorm\Entity\Sco;
-use ZipArchive;
 
 class ScormManager
 {
@@ -25,6 +24,8 @@ class ScormManager
     private $scormLib;
     /** @var ScormDisk */
     private $scormDisk;
+    /** @var string $uuid */
+    private $uuid;
 
     /**
      * Constructor.
@@ -38,31 +39,70 @@ class ScormManager
         $this->scormDisk = new ScormDisk();
     }
 
+    public function uploadScormFromUri($file)
+    {
+        $scorm = null;
+        $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file) {
+            $this->uuid = dirname($file);
+            $filename = basename($file);
+            $scorm = $this->saveScorm($path, $filename);
+        });
+        return $scorm;
+    }
+
     public function uploadScormArchive(UploadedFile $file)
     {
-        // Checks if it is a valid scorm archive
-        $scormData  =   null;
-        $zip = new ZipArchive();
-        $openValue = $zip->open($file);
+        $this->uuid = Str::uuid();
+        return $this->saveScorm($file, $file->getClientOriginalName());
+    }
 
+    /**
+     *  Checks if it is a valid scorm archive
+     * 
+     * @param string|UploadedFile $file zip.       
+     */
+    private function validatePackage($file)
+    {
+        $zip = new \ZipArchive();
+        $openValue = $zip->open($file);
         $isScormArchive = (true === $openValue) && $zip->getStream('imsmanifest.xml');
 
         $zip->close();
-
         if (!$isScormArchive) {
-            throw new InvalidScormArchiveException('invalid_scorm_archive_message');
-        } else {
-            $scormData  =   $this->generateScorm($file);
+            $this->onError('invalid_scorm_archive_message');
         }
+    }
 
+    /**
+     *  Save scom data
+     * 
+     * @param string|UploadedFile $file zip.       
+     */
+    private function saveScorm($file, $filename)
+    {
+        $this->validatePackage($file);
+        $scormData  =   $this->generateScorm($file);
         // save to db
         if (is_null($scormData) || !is_array($scormData)) {
-            throw new InvalidScormArchiveException('invalid_scorm_data');
+            $this->onError('invalid_scorm_data');
         }
 
-        // Magic method: https://laravel.com/docs/5.0/queries#advanced-wheres
-        // https://github.com/laravel/framework/blob/9.x/src/Illuminate/Database/Query/Builder.php
-        $scorm = ScormModel::whereOriginFile($scormData['identifier']);
+        /**
+         * ScormModel::whereOriginFile Query Builder style equals ScormModel::where('origin_file',$value)
+         * 
+         * From Laravel doc https://laravel.com/docs/5.0/queries#advanced-wheres.
+         * Dynamic Where Clauses
+         * You may even use "dynamic" where statements to fluently build where statements using magic methods:
+         * 
+         * Examples: 
+         * 
+         * $admin = DB::table('users')->whereId(1)->first();
+         * From laravel framework https://github.com/laravel/framework/blob/9.x/src/Illuminate/Database/Query/Builder.php'
+         *  Handle dynamic method calls into the method.
+         *  return $this->dynamicWhere($method, $parameters);
+         **/
+        $scorm = ScormModel::whereOriginFile($filename);
+        
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
             $scorm = new ScormModel();
@@ -70,12 +110,12 @@ class ScormManager
             $scorm = $scorm->first();
             $this->deleteScormData($scorm);
         }
-
         $scorm->uuid =   $scormData['uuid'];
         $scorm->title =   $scormData['title'];
         $scorm->version =   $scormData['version'];
         $scorm->entry_url =   $scormData['entryUrl'];
-        $scorm->origin_file =   $scormData['identifier'];
+        $scorm->identifier =   $scormData['identifier'];
+        $scorm->origin_file =   $filename;
         $scorm->save();
 
         if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
@@ -122,7 +162,10 @@ class ScormManager
         return $sco;
     }
 
-    private function parseScormArchive(UploadedFile $file)
+    /**
+     * @param string|UploadedFile $file zip.       
+     */
+    private function parseScormArchive($file)
     {
         $data = [];
         $contents = '';
@@ -139,14 +182,14 @@ class ScormManager
         $dom = new DOMDocument();
 
         if (!$dom->loadXML($contents)) {
-            throw new InvalidScormArchiveException('cannot_load_imsmanifest_message');
+            $this->onError('cannot_load_imsmanifest_message');
         }
 
         $manifest = $dom->getElementsByTagName('manifest')->item(0);
         if (!is_null($manifest->attributes->getNamedItem('identifier'))) {
             $data['identifier'] = $manifest->attributes->getNamedItem('identifier')->nodeValue;
         } else {
-            throw new InvalidScormArchiveException('invalid_scorm_manifest_identifier');
+            $this->onError('invalid_scorm_manifest_identifier');
         }
         $titles = $dom->getElementsByTagName('title');
         if ($titles->length > 0) {
@@ -165,15 +208,15 @@ class ScormManager
                     $data['version'] = Scorm::SCORM_2004;
                     break;
                 default:
-                    throw new InvalidScormArchiveException('invalid_scorm_version_message');
+                    $this->onError('invalid_scorm_version_message');
             }
         } else {
-            throw new InvalidScormArchiveException('invalid_scorm_version_message');
+            $this->onError('invalid_scorm_version_message');
         }
         $scos = $this->scormLib->parseOrganizationsNode($dom);
 
         if (0 >= count($scos)) {
-            throw new InvalidScormArchiveException('no_sco_in_scorm_archive_message');
+            $this->onError('no_sco_in_scorm_archive_message');
         }
 
         $data['entryUrl'] = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl;
@@ -211,28 +254,27 @@ class ScormManager
      */
     protected function deleteScormFolder($folderHashedName)
     {
-        return $this->scormDisk->deleteScormFolder($folderHashedName);
+        return $this->scormDisk->deleteScorm($folderHashedName);
     }
 
     /**
-     * @param UploadedFile $file
+     * @param string|UploadedFile $file zip.       
      * @return array
      * @throws InvalidScormArchiveException
      */
-    private function generateScorm(UploadedFile $file)
+    private function generateScorm($file)
     {
-        $uuid = Str::uuid();
         $scormData = $this->parseScormArchive($file);
         /**
          * Unzip a given ZIP file into the web resources directory.
          *
          * @param string $hashName name of the destination directory
          */
-        $this->scormDisk->unzip($file, $uuid);
+        $this->scormDisk->unzipper($file, $this->uuid);
 
         return [
             'identifier' => $scormData['identifier'],
-            'uuid' => $uuid,
+            'uuid' => $this->uuid,
             'title' => $scormData['title'], // to follow standard file data format
             'version' => $scormData['version'],
             'entryUrl' => $scormData['entryUrl'],
@@ -262,9 +304,8 @@ class ScormManager
      */
     public function getScoByUuid($scoUuid)
     {
-        $sco    =   ScormScoModel::with([
-            'scorm'
-        ])->where('uuid', $scoUuid)
+        $sco    =   ScormScoModel::with(['scorm'])
+            ->where('uuid', $scoUuid)
             ->firstOrFail();
 
         return $sco;
@@ -275,7 +316,7 @@ class ScormManager
         return ScormScoTrackingModel::where('sco_id', $scoId)->where('user_id', $userId)->first();
     }
 
-    public function createScoTracking($scoUuid, $userId = null)
+    public function createScoTracking($scoUuid, $userId = null, $userName = null)
     {
         $sco    =   ScormScoModel::where('uuid', $scoUuid)->firstOrFail();
 
@@ -283,6 +324,7 @@ class ScormManager
         $scoTracking = new ScoTracking();
         $scoTracking->setSco($sco->toArray());
 
+        $cmi = null;
         switch ($version) {
             case Scorm::SCORM_12:
                 $scoTracking->setLessonStatus('not attempted');
@@ -300,16 +342,29 @@ class ScormManager
                 } else {
                     $scoTracking->setIsLocked(true);
                 }
+                $cmi = [
+                    'cmi.core.entry' => $scoTracking->getEntry(),
+                    'cmi.core.student_id' => $userId,
+                    'cmi.core.student_name' => $userName,
+                ];
+
                 break;
             case Scorm::SCORM_2004:
                 $scoTracking->setTotalTimeString('PT0S');
                 $scoTracking->setCompletionStatus('unknown');
                 $scoTracking->setLessonStatus('unknown');
                 $scoTracking->setIsLocked(false);
+                $cmi = [
+                    'cmi.entry' => 'ab-initio',
+                    'cmi.learner_id' =>  $userId,
+                    'cmi.learner_name' => $userName,
+                    'cmi.scaled_passing_score' => 0.5,
+                ];
                 break;
         }
 
         $scoTracking->setUserId($userId);
+        $scoTracking->setDetails($cmi);
 
         // Create a new tracking model
         $storeTracking  =   ScormScoTrackingModel::firstOrCreate([
@@ -651,5 +706,14 @@ class ScormManager
         }
 
         return $formattedValue;
+    }
+
+    /**
+     * Clean resources and throw exception.
+     */
+    private function onError($msg)
+    {
+        $this->scormDisk->deleteScorm($this->uuid);
+        throw new InvalidScormArchiveException($msg);
     }
 }

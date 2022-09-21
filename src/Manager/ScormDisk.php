@@ -2,60 +2,119 @@
 
 namespace Peopleaps\Scorm\Manager;
 
+use Exception;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Peopleaps\Scorm\Exception\StorageNotFoundException;
-use ZipArchive;
 
 class ScormDisk
 {
     /**
      * Extract zip file into destination directory.
      *
-     * @param string $path Destination directory
-     * @param string $zipFilePath The path to the zip file.
+     * @param UploadedFile|string $file zip source
+     * @param string $path The path to the destination.
      *
-     * @return bool True on success, false on failure.
+     * @return bool true on success, false on failure.
      */
-    public function unzip($file, $path)
+    function unzipper($file, $target_dir)
     {
-        $path = $this->cleanPath($path);
-
-        $zipArchive = new ZipArchive();
-        if ($zipArchive->open($file) !== true) {
-            return false;
-        }
-
-        /** @var FilesystemAdapter $disk */
-        $disk = $this->getDisk();
-        $createDir = 'createDir';
-        $putStream = 'putStream';
-
-        if (!method_exists($disk, $createDir)) {
-            $createDir = 'createDirectory';
-            $putStream = 'writeStream';
-        }
-
-        for ($i = 0; $i < $zipArchive->numFiles; ++$i) {
-            $zipEntryName = $zipArchive->getNameIndex($i);
-            $destination = $path . DIRECTORY_SEPARATOR . $this->cleanPath($zipEntryName);
-            if ($this->isDirectory($zipEntryName)) {
-                $disk->$createDir($destination);
-                continue;
+        $target_dir = $this->cleanPath($target_dir);
+        $unzipper = resolve(\ZipArchive::class);
+        if ($unzipper->open($file)) {
+            /** @var FilesystemAdapter $disk */
+            $disk = $this->getDisk();
+            for ($i = 0; $i < $unzipper->numFiles; ++$i) {
+                $zipEntryName = $unzipper->getNameIndex($i);
+                $destination = $this->join($target_dir, $this->cleanPath($zipEntryName));
+                if ($this->isDirectory($zipEntryName)) {
+                    $disk->createDir($destination);
+                    continue;
+                }
+                $disk->putStream($destination, $unzipper->getStream($zipEntryName));
             }
-            $disk->$putStream($destination, $zipArchive->getStream($zipEntryName));
+            return true;
         }
+        return false;
+    }
 
-        return true;
+    /**
+     * @param string $file SCORM archive uri on storage.
+     * @param callable $fn function run user stuff before unlink
+     */
+    public function readScormArchive($file, callable $fn)
+    {
+        try {
+            if (Storage::exists($file)) {
+                Storage::delete($file);
+            }
+            Storage::writeStream($file, $this->getArchiveDisk()->readStream($file));
+            $path = Storage::path($file);
+            call_user_func($fn, $path);
+            // Clean local resources
+            $this->clean($file);
+        } catch (Exception $ex) {
+            Log::error($ex->getMessage());
+            throw new StorageNotFoundException('scorm_archive_not_found');
+        }
+    }
+
+    private function clean($file)
+    {
+        try {
+            Storage::delete($file);
+            Storage::deleteDirectory(dirname($file)); // delete temp dir
+        } catch (Exception $ex) {
+            Log::error($ex->getMessage());
+        }
     }
 
     /**
      * @param string $directory
      * @return bool
      */
-    public function deleteScormFolder($folderHashedName)
+    public function deleteScorm($uuid)
     {
-        return $this->getDisk()->deleteDirectory($folderHashedName);
+        $this->deleteScormArchive($uuid); // try to delete archive if exists.
+        return $this->deleteScormContent($uuid);
+    }
+
+    /**
+     * @param string $directory
+     * @return bool
+     */
+    private function deleteScormContent($folderHashedName)
+    {
+        try {
+            return $this->getDisk()->deleteDirectory($folderHashedName);
+        } catch (Exception $ex) {
+            Log::error($ex->getMessage());
+        }
+    }
+
+    /**
+     * @param string $directory
+     * @return bool
+     */
+    private function deleteScormArchive($uuid)
+    {
+        try {
+            return $this->getArchiveDisk()->deleteDirectory($uuid);
+        } catch (Exception $ex) {
+            Log::error($ex->getMessage());
+        }
+    }
+
+    /**
+     * 
+     * @param array $paths
+     * @return string joined path
+     */
+    private function join(...$paths)
+    {
+        return  implode(DIRECTORY_SEPARATOR, $paths);
     }
 
     private function isDirectory($zipEntryName)
@@ -77,5 +136,16 @@ class ScormDisk
             throw new StorageNotFoundException('scorm_disk_not_define');
         }
         return Storage::disk(config('scorm.disk'));
+    }
+
+    /**
+     * @return FilesystemAdapter $disk
+     */
+    private function getArchiveDisk()
+    {
+        if (!config()->has('filesystems.disks.' . config('scorm.archive'))) {
+            throw new StorageNotFoundException('scorm_archive_disk_not_define');
+        }
+        return Storage::disk(config('scorm.archive'));
     }
 }
