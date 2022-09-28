@@ -530,17 +530,9 @@ class ScormManager
 
                 // Compute total time
                 $totalTimeInHundredth = $this->convertTimeInHundredth($totalTime);
-                $totalTimeInHundredth += $sessionTimeInHundredth;
-
-                // Persist total time
-                if ($tracking->getTotalTimeInt() > 0) {
-                    $totalTimeInHundredth   +=  $tracking->getTotalTimeInt();
-                }
-
                 $tracking->setTotalTime($totalTimeInHundredth, Scorm::SCORM_12);
 
                 $bestScore = $tracking->getScoreRaw();
-                $bestStatus = $tracking->getLessonStatus();
 
                 // Update best score if the current score is better than the previous best score
 
@@ -550,10 +542,8 @@ class ScormManager
                     $tracking->setScoreMax($scoreMax);
                 }
 
-                if (empty($bestStatus) || ($lessonStatus !== $bestStatus && $statusPriority[$lessonStatus] > $statusPriority[$bestStatus])) {
-                    $tracking->setLessonStatus($lessonStatus);
-                    $bestStatus = $lessonStatus;
-                }
+                $tracking->setLessonStatus($lessonStatus);
+                $bestStatus = $lessonStatus;
 
                 if (empty($progression) && ('completed' === $bestStatus || 'passed' === $bestStatus)) {
                     $progression = 100;
@@ -615,14 +605,10 @@ class ScormManager
                     $lessonStatus = $successStatus;
                 }
 
-                $bestStatus = $tracking->getLessonStatus();
-                if (empty($bestStatus) || ($lessonStatus !== $bestStatus && $statusPriority[$lessonStatus] > $statusPriority[$bestStatus])) {
-                    $tracking->setLessonStatus($lessonStatus);
-                    $bestStatus = $lessonStatus;
-                }
+                $tracking->setLessonStatus($lessonStatus);
+                $bestStatus = $lessonStatus;
 
-                if (
-                    empty($tracking->getCompletionStatus())
+                if (empty($tracking->getCompletionStatus())
                     || ($completionStatus !== $tracking->getCompletionStatus() && $statusPriority[$completionStatus] > $statusPriority[$tracking->getCompletionStatus()])
                 ) {
                     // This is no longer needed as completionStatus and successStatus are merged together
