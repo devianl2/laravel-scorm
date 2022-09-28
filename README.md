@@ -133,3 +133,7 @@ Update your Scorm table:
 - Change hash_name to title
 - Remove origin_file_mime field
 
+***Upgrade from version 3 to 4:***
+Update your Scorm table:
+- Add identifier (varchar 191)
+
