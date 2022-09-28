@@ -20,7 +20,12 @@ Highlight of this package:
 
 
 ## Step 1:
-Install from composer
+Install from composer (For flysystem v2)
+```sh
+composer require devianl2/laravel-scorm:"^3.0"
+```
+
+Install from composer (For flysystem v3)
 ```sh
 composer require devianl2/laravel-scorm
 ```
