@@ -39,21 +39,46 @@ class ScormManager
         $this->scormDisk = new ScormDisk();
     }
 
-    public function uploadScormFromUri($file)
+    public function uploadScormFromUri($file, $uuid = null)
     {
+        // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
+        if (!empty($uuid))
+        {
+            $this->uuid =   $uuid;
+        }
+        else
+        {
+            $this->uuid = Str::uuid();
+        }
+
+
         $scorm = null;
-        $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file) {
-            $this->uuid = dirname($file);
+        $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file, $uuid) {
             $filename = basename($file);
-            $scorm = $this->saveScorm($path, $filename);
+            $scorm = $this->saveScorm($path, $filename, $uuid);
         });
         return $scorm;
     }
 
-    public function uploadScormArchive(UploadedFile $file)
+    /**
+     * @param UploadedFile $file
+     * @param null|string $uuid
+     * @return ScormModel
+     * @throws InvalidScormArchiveException
+     */
+    public function uploadScormArchive(UploadedFile $file, $uuid = null)
     {
-        $this->uuid = Str::uuid();
-        return $this->saveScorm($file, $file->getClientOriginalName());
+        // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
+        if (!empty($uuid))
+        {
+            $this->uuid =   $uuid;
+        }
+        else
+        {
+            $this->uuid = Str::uuid();
+        }
+
+        return $this->saveScorm($file, $file->getClientOriginalName(), $uuid);
     }
 
     /**
@@ -74,11 +99,15 @@ class ScormManager
     }
 
     /**
-     *  Save scom data
-     * 
-     * @param string|UploadedFile $file zip.       
+     *  Save scorm data
+     *
+     * @param string|UploadedFile $file zip.
+     * @param string $filename
+     * @param null|string $uuid
+     * @return ScormModel
+     * @throws InvalidScormArchiveException
      */
-    private function saveScorm($file, $filename)
+    private function saveScorm($file, $filename, $uuid = null)
     {
         $this->validatePackage($file);
         $scormData  =   $this->generateScorm($file);
@@ -87,8 +116,14 @@ class ScormManager
             $this->onError('invalid_scorm_data');
         }
 
+        // This uuid is use when the admin wants to edit existing scorm file.
+        if (!empty($uuid))
+        {
+            $this->uuid =   $uuid; // Overwrite system generated uuid
+        }
+
         /**
-         * ScormModel::whereOriginFile Query Builder style equals ScormModel::where('origin_file',$value)
+         * ScormModel::whereUuid Query Builder style equals ScormModel::where('uuid',$value)
          * 
          * From Laravel doc https://laravel.com/docs/5.0/queries#advanced-wheres.
          * Dynamic Where Clauses
@@ -101,8 +136,9 @@ class ScormManager
          *  Handle dynamic method calls into the method.
          *  return $this->dynamicWhere($method, $parameters);
          **/
-        $scorm = ScormModel::whereOriginFile($filename);
-        
+        // Uuid indicator is better than filename for update content or add new content.
+        $scorm = ScormModel::whereUuid($this->uuid);
+
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
             $scorm = new ScormModel();
@@ -110,7 +146,8 @@ class ScormManager
             $scorm = $scorm->first();
             $this->deleteScormData($scorm);
         }
-        $scorm->uuid =   $scormData['uuid'];
+
+        $scorm->uuid =   $this->uuid;
         $scorm->title =   $scormData['title'];
         $scorm->version =   $scormData['version'];
         $scorm->entry_url =   $scormData['entryUrl'];
