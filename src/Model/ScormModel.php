@@ -30,6 +30,7 @@ class ScormModel extends Model
         'version',
         'ratio',
         'uuid',
+        'identifier',
         'entry_url',
         'created_at',
         'updated_at',

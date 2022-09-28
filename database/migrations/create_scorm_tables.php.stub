@@ -28,6 +28,7 @@ class CreateScormTables extends Migration
             $table->string('version');
             $table->double('ratio')->nullable();
             $table->string('uuid');
+            $table->string('identifier');
             $table->string('entry_url')->nullable();
             $table->timestamps();
         });

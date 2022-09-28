@@ -20,12 +20,12 @@ Highlight of this package:
 
 
 ## Step 1:
-Install from composer (For flysystem v2)
+Install from composer (For flysystem v1)
 ```sh
 composer require devianl2/laravel-scorm:"^3.0"
 ```
 
-Install from composer (For flysystem v3)
+Install from composer (For flysystem v2/v3)
 ```sh
 composer require devianl2/laravel-scorm
 ```
@@ -132,4 +132,8 @@ Update your Scorm table:
 - Add entry_url (varchar 191 / nullable)
 - Change hash_name to title
 - Remove origin_file_mime field
+
+***Upgrade from version 3 to 4:***
+Update your Scorm table:
+- Add identifier (varchar 191)
 
