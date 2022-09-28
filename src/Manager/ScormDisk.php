@@ -33,7 +33,7 @@ class ScormDisk
                     $disk->createDir($destination);
                     continue;
                 }
-                $disk->putStream($destination, $unzipper->getStream($zipEntryName));
+                $disk->writeStream($destination, $unzipper->getStream($zipEntryName));
             }
             return true;
         }
