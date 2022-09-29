@@ -30,7 +30,7 @@ class ScormDisk
                 $zipEntryName = $unzipper->getNameIndex($i);
                 $destination = $this->join($target_dir, $this->cleanPath($zipEntryName));
                 if ($this->isDirectory($zipEntryName)) {
-                    $disk->createDir($destination);
+                    $disk->createDirectory($destination);
                     continue;
                 }
                 $disk->writeStream($destination, $unzipper->getStream($zipEntryName));
