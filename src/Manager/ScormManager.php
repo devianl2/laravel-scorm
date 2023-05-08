@@ -42,15 +42,11 @@ class ScormManager
     public function uploadScormFromUri($file, $uuid = null)
     {
         // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
-        if (!empty($uuid))
-        {
+        if (!empty($uuid)) {
             $this->uuid =   $uuid;
-        }
-        else
-        {
+        } else {
             $this->uuid = Str::uuid();
         }
-
 
         $scorm = null;
         $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file, $uuid) {
@@ -69,12 +65,9 @@ class ScormManager
     public function uploadScormArchive(UploadedFile $file, $uuid = null)
     {
         // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
-        if (!empty($uuid))
-        {
+        if (!empty($uuid)) {
             $this->uuid =   $uuid;
-        }
-        else
-        {
+        } else {
             $this->uuid = Str::uuid();
         }
 
@@ -117,8 +110,7 @@ class ScormManager
         }
 
         // This uuid is use when the admin wants to edit existing scorm file.
-        if (!empty($uuid))
-        {
+        if (!empty($uuid)) {
             $this->uuid =   $uuid; // Overwrite system generated uuid
         }
 
@@ -136,8 +128,11 @@ class ScormManager
          *  Handle dynamic method calls into the method.
          *  return $this->dynamicWhere($method, $parameters);
          **/
+
+        $scorm = ScormModel::whereOriginFile($filename);
+
         // Uuid indicator is better than filename for update content or add new content.
-        $scorm = ScormModel::whereUuid($this->uuid);
+        // $scorm = ScormModel::whereUuid($this->uuid);
 
         // Check if scom package already exists to drop old one.
         if (!$scorm->exists()) {
@@ -608,7 +603,8 @@ class ScormManager
                 $tracking->setLessonStatus($lessonStatus);
                 $bestStatus = $lessonStatus;
 
-                if (empty($tracking->getCompletionStatus())
+                if (
+                    empty($tracking->getCompletionStatus())
                     || ($completionStatus !== $tracking->getCompletionStatus() && $statusPriority[$completionStatus] > $statusPriority[$tracking->getCompletionStatus()])
                 ) {
                     // This is no longer needed as completionStatus and successStatus are merged together
@@ -656,7 +652,8 @@ class ScormManager
         return $updateResult;
     }
 
-    public function resetUserData($scormId, $userId) {
+    public function resetUserData($scormId, $userId)
+    {
         $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
 
         foreach ($scos as $sco) {
