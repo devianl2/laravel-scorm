@@ -1,4 +1,4 @@
-# Laravel Scorm Handler
+# Laravel Scorm Handler (DISCONTINUE)
 ## _Design for Laravel LMS_
 
 [![N|Solid](https://peopleaps.com/wp-content/uploads/2020/11/p2-01-01.png)](https://www.peopleaps.com)
