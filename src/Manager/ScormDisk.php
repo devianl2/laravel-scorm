@@ -33,10 +33,10 @@ class ScormDisk
             $zipEntryName = $zipArchive->getNameIndex($i);
             $destination = $path . DIRECTORY_SEPARATOR . $this->cleanPath($zipEntryName);
             if ($this->isDirectory($zipEntryName)) {
-                $disk->createDir($destination);
+                $disk->createDirectory($destination);
                 continue;
             }
-            $disk->putStream($destination, $zipArchive->getStream($zipEntryName));
+            $disk->writeStream($destination, $zipArchive->getStream($zipEntryName));
         }
 
         return true;
