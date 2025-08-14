@@ -76,7 +76,7 @@ class ScormDisk
             $this->clean($file);
         } catch (Exception $ex) {
             Log::error('Error in readScormArchive: ' . $ex->getMessage() . ' for file: ' . $file);
-            throw new StorageNotFoundException('scorm_archive_not_found');
+            throw $ex;
         }
     }
 
