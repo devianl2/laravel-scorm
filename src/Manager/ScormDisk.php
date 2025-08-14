@@ -47,16 +47,35 @@ class ScormDisk
     public function readScormArchive($file, callable $fn)
     {
         try {
+            $archiveDisk = $this->getArchiveDisk();
+            
+            // Log the file path being processed for debugging
+            Log::info('Processing SCORM archive file: ' . $file);
+            
+            // Check if file exists on archive disk
+            if (!$archiveDisk->exists($file)) {
+                Log::error('File not found on archive disk: ' . $file);
+                throw new StorageNotFoundException('scorm_archive_not_found_on_archive_disk: ' . $file);
+            }
+            
+            // Get the stream from archive disk
+            $stream = $archiveDisk->readStream($file);
+            if (!is_resource($stream)) {
+                Log::error('Failed to read stream from archive disk for file: ' . $file . '. Stream type: ' . gettype($stream));
+                throw new StorageNotFoundException('failed_to_read_scorm_archive_stream: ' . $file);
+            }
+            
             if (Storage::exists($file)) {
                 Storage::delete($file);
             }
-            Storage::writeStream($file, $this->getArchiveDisk()->readStream($file));
+            
+            Storage::writeStream($file, $stream);
             $path = Storage::path($file);
             call_user_func($fn, $path);
             // Clean local resources
             $this->clean($file);
         } catch (Exception $ex) {
-            Log::error($ex->getMessage());
+            Log::error('Error in readScormArchive: ' . $ex->getMessage() . ' for file: ' . $file);
             throw new StorageNotFoundException('scorm_archive_not_found');
         }
     }
@@ -132,10 +151,26 @@ class ScormDisk
      */
     private function getDisk()
     {
-        if (!config()->has('filesystems.disks.' . config('scorm.disk'))) {
-            throw new StorageNotFoundException('scorm_disk_not_define');
+        $diskName = config('scorm.disk');
+        if (empty($diskName)) {
+            throw new StorageNotFoundException('scorm_disk_not_configured');
         }
-        return Storage::disk(config('scorm.disk'));
+        
+        if (!config()->has('filesystems.disks.' . $diskName)) {
+            throw new StorageNotFoundException('scorm_disk_not_define: ' . $diskName);
+        }
+        
+        $disk = Storage::disk($diskName);
+        
+        // Test if the disk is accessible
+        try {
+            $disk->exists('test');
+        } catch (Exception $ex) {
+            Log::error('SCORM disk not accessible: ' . $ex->getMessage());
+            throw new StorageNotFoundException('scorm_disk_not_accessible: ' . $diskName);
+        }
+        
+        return $disk;
     }
 
     /**
@@ -143,9 +178,25 @@ class ScormDisk
      */
     private function getArchiveDisk()
     {
-        if (!config()->has('filesystems.disks.' . config('scorm.archive'))) {
-            throw new StorageNotFoundException('scorm_archive_disk_not_define');
+        $archiveDiskName = config('scorm.archive');
+        if (empty($archiveDiskName)) {
+            throw new StorageNotFoundException('scorm_archive_disk_not_configured');
         }
-        return Storage::disk(config('scorm.archive'));
+        
+        if (!config()->has('filesystems.disks.' . $archiveDiskName)) {
+            throw new StorageNotFoundException('scorm_archive_disk_not_define: ' . $archiveDiskName);
+        }
+        
+        $disk = Storage::disk($archiveDiskName);
+        
+        // Test if the disk is accessible
+        try {
+            $disk->exists('test');
+        } catch (Exception $ex) {
+            Log::error('Archive disk not accessible: ' . $ex->getMessage());
+            throw new StorageNotFoundException('scorm_archive_disk_not_accessible: ' . $archiveDiskName);
+        }
+        
+        return $disk;
     }
 }
