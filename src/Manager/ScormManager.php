@@ -260,6 +260,8 @@ class ScormManager
         // Delete after the previous item is stored
         if ($model) {
             $this->deleteScormData($model);
+            // Delete folder from server
+            $this->deleteScormFolder($model->uuid);
             $model->delete(); // delete scorm
         }
     }
@@ -274,8 +276,6 @@ class ScormManager
             $oldSco->scoTrackings()->delete();
         }
         $model->scos()->delete(); // delete scos
-        // Delete folder from server
-        $this->deleteScormFolder($model->uuid);
     }
 
     /**
