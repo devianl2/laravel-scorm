@@ -84,7 +84,7 @@ class ScormManager
     {
         // Look for imsmanifest.xml in root directory first
         $manifestStream = $zip->getStream('imsmanifest.xml');
-        
+
         if ($manifestStream) {
             \Log::info('Found imsmanifest.xml in root directory');
             return [
@@ -93,13 +93,13 @@ class ScormManager
                 'stream' => $manifestStream
             ];
         }
-        
+
         // Search for imsmanifest.xml in subdirectories
         \Log::info('imsmanifest.xml not found in root, searching subdirectories...');
-        
+
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $filename = $zip->getNameIndex($i);
-            
+
             // Check if this file is imsmanifest.xml (case insensitive)
             if (strtolower(basename($filename)) === 'imsmanifest.xml') {
                 $manifestStream = $zip->getStream($filename);
@@ -113,7 +113,7 @@ class ScormManager
                 }
             }
         }
-        
+
         return [
             'found' => false,
             'path' => '',
@@ -133,7 +133,7 @@ class ScormManager
 
         try {
             $openValue = $zip->open($file);
-            
+
             if ($openValue !== true) {
                 \Log::error('Zip open errorCode: ' . $openValue);
                 $this->onError('invalid_scorm_archive_message');
@@ -147,7 +147,7 @@ class ScormManager
             }
             $zip->close();
         }
-        
+
         if (!$manifestResult['found']) {
             \Log::error('imsmanifest.xml not found anywhere in the ZIP archive');
             $this->onError('invalid_scorm_archive_message');
@@ -211,14 +211,14 @@ class ScormManager
         $scorm->entry_url =   $scormData['entryUrl'];
         $scorm->identifier =   $scormData['identifier'];
         $scorm->origin_file =   $filename;
-        
+
         // Auto-detect and set metadata
         $scorm->metadata = [
             'package_size' => $this->getFileSize($file),
             'created_at' => $scormData['created_at'] ?? null,
             'created_by' => $scormData['created_by'] ?? null
         ];
-        
+
         $scorm->save();
 
         if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
@@ -243,14 +243,14 @@ class ScormManager
     private function saveScormScosRecursively($scorm_id, $scoData, $sco_parent_id = null)
     {
         $sco = $this->saveScormScos($scorm_id, $scoData, $sco_parent_id);
-        
+
         // Recursively save children
         if ($scoData->scoChildren && is_array($scoData->scoChildren)) {
             foreach ($scoData->scoChildren as $scoChild) {
                 $this->saveScormScosRecursively($scorm_id, $scoChild, $sco->id);
             }
         }
-        
+
         return $sco;
     }
 
@@ -279,9 +279,9 @@ class ScormManager
         $sco->score_decimal  =   $scoData->scoreToPassDecimal;
         $sco->completion_threshold  =   $scoData->completionThreshold;
         $sco->prerequisites  =   $scoData->prerequisites;
-        
+
         $sco->save();
-        
+
         \Log::info("saveScormScos: Saved SCO - " . $sco->identifier);
         return $sco;
     }
@@ -298,14 +298,14 @@ class ScormManager
 
         try {
             $openValue = $zip->open($file);
-            
+
             if ($openValue !== true) {
                 \Log::error('Failed to open ZIP file in parseScormArchive. Error code: ' . $openValue);
                 $this->onError('cannot_load_imsmanifest_message');
             }
-            
+
             $manifestResult = $this->findManifestInZip($zip);
-            
+
             if (!$manifestResult['found']) {
                 $this->onError('cannot_load_imsmanifest_message');
             }
@@ -367,12 +367,12 @@ class ScormManager
 
         $data['entryUrl'] = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl;
         $data['scos'] = $scos;
-        
+
         \Log::info('parseScormArchive: Found ' . count($scos) . ' SCOs, entryUrl: ' . $data['entryUrl']);
-        
+
         // Include manifest path for later use in entry URL adjustment
         $data['manifestPath'] = $manifestResult['path'];
-        
+
         // Extract creation date and creator from manifest metadata
         $data['created_at'] = $this->extractCreationDate($dom);
         $data['created_by'] = $this->extractCreator($dom);
@@ -873,11 +873,11 @@ class ScormManager
         if ($file instanceof UploadedFile) {
             return $file->getSize();
         }
-        
+
         if (is_string($file) && file_exists($file)) {
             return filesize($file);
         }
-        
+
         return 0;
     }
 
@@ -888,29 +888,29 @@ class ScormManager
     {
         try {
             $xpath = new \DOMXPath($dom);
-            
+
             // Register common SCORM namespaces with error handling
             $this->registerScormNamespaces($xpath);
-            
+
             // SCORM 2004: Look for lom:lom/lom:lifeCycle/lom:contribute/lom:date/lom:dateTime
             // Priority 1: Creator/Author contribution date
             $dateNodes = $this->safeXPathQuery($xpath, '//lom:dateTime[ancestor::lom:contribute[lom:role/lom:value[text()="creator" or text()="author"]]]');
             if ($dateNodes && $dateNodes->length > 0) {
                 return $this->formatDate($dateNodes->item(0)->textContent);
             }
-            
+
             // Priority 2: Any contribution date
             $dateNodes = $this->safeXPathQuery($xpath, '//lom:dateTime[ancestor::lom:contribute]');
             if ($dateNodes && $dateNodes->length > 0) {
                 return $this->formatDate($dateNodes->item(0)->textContent);
             }
-            
+
             // Priority 3: Any dateTime in metadata
             $dateNodes = $this->safeXPathQuery($xpath, '//lom:dateTime');
             if ($dateNodes && $dateNodes->length > 0) {
                 return $this->formatDate($dateNodes->item(0)->textContent);
             }
-            
+
             // SCORM 1.2: Look for <schema> and <schemaversion> to get creation context
             $schemaNodes = $this->safeXPathQuery($xpath, '//schema');
             if ($schemaNodes && $schemaNodes->length > 0) {
@@ -921,11 +921,10 @@ class ScormManager
                     return null;
                 }
             }
-            
         } catch (\Exception $e) {
             \Log::warning('extractCreationDate: Error extracting creation date - ' . $e->getMessage());
         }
-        
+
         return null;
     }
 
@@ -936,41 +935,41 @@ class ScormManager
     {
         try {
             $xpath = new \DOMXPath($dom);
-            
+
             // Register common SCORM namespaces with error handling
             $this->registerScormNamespaces($xpath);
-            
+
             // SCORM 2004: Look for lom:lom/lom:lifeCycle/lom:contribute/lom:entity
             // Priority 1: Creator role
             $entityNodes = $this->safeXPathQuery($xpath, '//lom:entity[ancestor::lom:contribute[lom:role/lom:value[text()="creator"]]]');
             if ($entityNodes && $entityNodes->length > 0) {
                 return trim($entityNodes->item(0)->textContent);
             }
-            
+
             // Priority 2: Author role
             $entityNodes = $this->safeXPathQuery($xpath, '//lom:entity[ancestor::lom:contribute[lom:role/lom:value[text()="author"]]]');
             if ($entityNodes && $entityNodes->length > 0) {
                 return trim($entityNodes->item(0)->textContent);
             }
-            
+
             // Priority 3: Publisher role
             $entityNodes = $this->safeXPathQuery($xpath, '//lom:entity[ancestor::lom:contribute[lom:role/lom:value[text()="publisher"]]]');
             if ($entityNodes && $entityNodes->length > 0) {
                 return trim($entityNodes->item(0)->textContent);
             }
-            
+
             // Priority 4: Any entity in contribute section
             $entityNodes = $this->safeXPathQuery($xpath, '//lom:entity[ancestor::lom:contribute]');
             if ($entityNodes && $entityNodes->length > 0) {
                 return trim($entityNodes->item(0)->textContent);
             }
-            
+
             // Priority 5: Any entity in metadata
             $entityNodes = $this->safeXPathQuery($xpath, '//lom:entity');
             if ($entityNodes && $entityNodes->length > 0) {
                 return trim($entityNodes->item(0)->textContent);
             }
-            
+
             // SCORM 1.2: Look for organization or other creator information
             // SCORM 1.2 typically doesn't have detailed creator metadata
             $orgNodes = $this->safeXPathQuery($xpath, '//organization');
@@ -978,11 +977,10 @@ class ScormManager
                 // For SCORM 1.2, we might not have creator info in manifest
                 return null;
             }
-            
         } catch (\Exception $e) {
             \Log::warning('extractCreator: Error extracting creator - ' . $e->getMessage());
         }
-        
+
         return null;
     }
 
@@ -994,7 +992,7 @@ class ScormManager
         if (empty($dateString)) {
             return null;
         }
-        
+
         // Try to parse the date and convert to ISO 8601
         try {
             $date = new \DateTime($dateString);
@@ -1034,22 +1032,31 @@ class ScormManager
     }
 
     /**
-     * Fix XML entities by escaping unescaped ampersands
-     * This prevents "xmlParseEntityRef: no name in Entity" errors
+     * Fix XML entities by escaping unescaped ampersands while preserving CDATA sections
      * 
      * @param string $xml
      * @return string
      */
     private function fixXmlEntities($xml)
     {
-        // Replace unescaped ampersands that are not part of valid XML entities
-        // Valid XML entities are:
-        // - Named entities: &amp; &lt; &gt; &quot; &apos; etc.
-        // - Numeric entities: &#123; (decimal) or &#x7B; (hexadecimal)
-        // This regex matches & that are NOT followed by a valid entity pattern
-        $xml = preg_replace('/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $xml);
-        
-        return $xml;
+        // Extract CDATA sections with placeholders
+        $cdataSections = [];
+        $xml = preg_replace_callback(
+            '/<!\[CDATA\[(.*?)\]\]>/s',
+            function ($matches) use (&$cdataSections) {
+                $placeholder = '__CDATA_' . count($cdataSections) . '__';
+                $cdataSections[$placeholder] = $matches[0];
+                return $placeholder;
+            },
+            $xml
+        );
+
+        // Escape ampersands not part of valid XML entities
+        // Valid: &name; &#123; &#xAB; &#XAB;
+        $xml = preg_replace('/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#[xX][0-9a-fA-F]+);)/', '&amp;', $xml);
+
+        // Restore CDATA sections
+        return str_replace(array_keys($cdataSections), $cdataSections, $xml);
     }
 
     /**
