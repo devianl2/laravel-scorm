@@ -323,6 +323,9 @@ class ScormManager
 
         $dom = new DOMDocument();
 
+        // Fix XML entity errors by escaping unescaped ampersands
+        $contents = $this->fixXmlEntities($contents);
+
         if (!$dom->loadXML($contents)) {
             $this->onError('cannot_load_imsmanifest_message');
         }
@@ -1028,6 +1031,25 @@ class ScormManager
             \Log::warning('safeXPathQuery: Error executing XPath query "' . $query . '" - ' . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Fix XML entities by escaping unescaped ampersands
+     * This prevents "xmlParseEntityRef: no name in Entity" errors
+     * 
+     * @param string $xml
+     * @return string
+     */
+    private function fixXmlEntities($xml)
+    {
+        // Replace unescaped ampersands that are not part of valid XML entities
+        // Valid XML entities are:
+        // - Named entities: &amp; &lt; &gt; &quot; &apos; etc.
+        // - Numeric entities: &#123; (decimal) or &#x7B; (hexadecimal)
+        // This regex matches & that are NOT followed by a valid entity pattern
+        $xml = preg_replace('/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $xml);
+        
+        return $xml;
     }
 
     /**
