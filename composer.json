@@ -7,13 +7,17 @@
         {
             "name": "Devian Leong",
             "email": "devian@peoplelogy.com"
+        },
+        {
+            "name": "Aydin Pramasta",
+            "email": "aydin.ilham@sevima.id"
         }
     ],
     "require": {
-        "php": "^7.4 || ^8.0",
-        "doctrine/common": "^3.1",
-        "league/flysystem": "^2.0 || ^3.0",
-        "nesbot/carbon": "^2.42",
+        "php": "^8.3",
+        "doctrine/common": "^3.5",
+        "league/flysystem": "^3.30",
+        "nesbot/carbon": "^3.10",
         "ext-zip": "*",
         "ext-dom": "*"
     },
