@@ -68,10 +68,12 @@ class ScormDisk
                     continue;
                 }
 
-                // writeStream() hands the resource straight to the S3 SDK —
-                // no intermediate local write.
+                // writeStream() passes the resource to the S3 SDK which may
+                // close it internally before returning. Guard before fclose.
                 $disk->writeStream($destination, $stream);
-                fclose($stream);
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
             }
         } finally {
             $zip->close();
@@ -171,7 +173,9 @@ class ScormDisk
             stream_copy_to_stream($stream, $tmpHandle);
         } finally {
             fclose($tmpHandle);
-            // The caller-supplied S3 stream is no longer needed.
+            // The S3 SDK / Flysystem may close the stream internally during
+            // stream_copy_to_stream. Guard with is_resource before fclose to
+            // avoid "supplied resource is not a valid stream resource" errors.
             if (is_resource($stream)) {
                 fclose($stream);
             }
