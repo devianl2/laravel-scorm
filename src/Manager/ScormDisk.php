@@ -18,11 +18,9 @@ class ScormDisk
 {
     private ScormLib $scormLib;
 
-    public function __construct(
-        private readonly UnzipperInterface $unzipper,
-        ?ScormLib $scormLib = null,
-    ) {
-        $this->scormLib = $scormLib ?? new ScormLib();
+    public function __construct(private readonly UnzipperInterface $unzipper)
+    {
+        $this->scormLib = new ScormLib();
     }
 
     /**
@@ -34,14 +32,21 @@ class ScormDisk
         $disk   = $this->getScormDisk();
         $prefix = $this->normalizeKey($uuid);
 
+        // Fast path — manifest at the expected root location
         if ($disk->exists($prefix . '/imsmanifest.xml')) {
             return true;
         }
 
-        foreach ($disk->allFiles($prefix) as $path) {
-            if (str_ends_with($path, 'imsmanifest.xml')) {
-                return true;
+        // Slower path — manifest may be nested in a subdirectory
+        try {
+            foreach ($disk->allFiles($prefix) as $path) {
+                if (str_ends_with($path, 'imsmanifest.xml')) {
+                    return true;
+                }
             }
+        } catch (\Throwable $e) {
+            // S3 throws when the prefix doesn't exist at all
+            return false;
         }
 
         return false;
