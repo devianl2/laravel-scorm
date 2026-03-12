@@ -29,23 +29,20 @@ class ScormDisk
      */
     public function contentExists(string $uuid): bool
     {
-        $disk   = $this->getScormDisk();
-        $prefix = $this->normalizeKey($uuid);
-
-        // Fast path — manifest at the expected root location
-        if ($disk->exists($prefix . '/imsmanifest.xml')) {
-            return true;
-        }
-
-        // Slower path — manifest may be nested in a subdirectory
         try {
+            $disk   = $this->getScormDisk();
+            $prefix = $this->normalizeKey($uuid);
+
+            if ($disk->exists($prefix . '/imsmanifest.xml')) {
+                return true;
+            }
+
             foreach ($disk->allFiles($prefix) as $path) {
                 if (str_ends_with($path, 'imsmanifest.xml')) {
                     return true;
                 }
             }
         } catch (\Throwable $e) {
-            // S3 throws when the prefix doesn't exist at all
             return false;
         }
 
@@ -159,15 +156,19 @@ class ScormDisk
 
     private function findManifest(FilesystemAdapter $disk, string $prefix): ?string
     {
-        $direct = $prefix . '/imsmanifest.xml';
-        if ($disk->exists($direct)) {
-            return $direct;
-        }
-
-        foreach ($disk->allFiles($prefix) as $path) {
-            if (str_ends_with($path, 'imsmanifest.xml')) {
-                return $path;
+        try {
+            $direct = $prefix . '/imsmanifest.xml';
+            if ($disk->exists($direct)) {
+                return $direct;
             }
+
+            foreach ($disk->allFiles($prefix) as $path) {
+                if (str_ends_with($path, 'imsmanifest.xml')) {
+                    return $path;
+                }
+            }
+        } catch (\Throwable $e) {
+            return null;
         }
 
         return null;
