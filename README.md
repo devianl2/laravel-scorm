@@ -174,6 +174,27 @@ $scorm = $scormManager->uploadScormFromUri($fileUrl);
 $scorm = $scormManager->uploadScormArchive($file, $existingUuid);
 ```
 
+### **⚙️ Choosing unzipper strategy**
+```php
+use Peopleaps\Scorm\Manager\ScormManager;
+use Peopleaps\Scorm\Contract\UnzipperInterface;
+use Peopleaps\Scorm\Manager\LambdaUnzipper;
+
+// 1. Laravel container (default — LocalUnzipper, no extra config needed)
+$manager = app(ScormManager::class);
+
+// 2. Swap to LambdaUnzipper via the container (e.g. in AppServiceProvider::register)
+$this->app->bind(UnzipperInterface::class, function () {
+    return new LambdaUnzipper(/* inject your client, bucket, etc. */);
+});
+
+// 3. Manual instantiation (e.g. in tests or outside Laravel)
+$manager = new ScormManager(
+    // ScormDisk is resolved for you when using the container;
+    // here you can wire a custom unzipper manually if needed.
+);
+```
+
 ### **📊 Metadata Structure**
 The system automatically captures:
 ```json

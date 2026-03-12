@@ -8,7 +8,6 @@ use DateTime;
 use Exception;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Peopleaps\Scorm\Contract\UnzipperInterface;
 use Peopleaps\Scorm\Entity\Scorm;
@@ -23,14 +22,9 @@ class ScormManager
 {
     private readonly ScormDisk $scormDisk;
 
-    public function __construct(?UnzipperInterface $unzipper = null)
+    public function __construct(UnzipperInterface $unzipper)
     {
-        $this->scormDisk = new ScormDisk(
-            $unzipper ?? new LocalUnzipper(
-                Storage::disk(config('scorm.archive')),
-                Storage::disk(config('scorm.disk')),
-            )
-        );
+        $this->scormDisk = new ScormDisk($unzipper);
     }
 
     // -------------------------------------------------------------------------
