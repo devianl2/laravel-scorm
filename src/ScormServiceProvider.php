@@ -7,15 +7,37 @@ namespace Peopleaps\Scorm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\ServiceProvider;
+use Peopleaps\Scorm\Contract\UnzipperInterface;
 use Peopleaps\Scorm\Manager\ScormManager;
 
 class ScormServiceProvider extends ServiceProvider
 {
     public function register()
     {
-        $this->app->bind('scorm-manager', function ($app) {
-            return new ScormManager();
+
+        // Default unzipper — applications can rebind UnzipperInterface before
+        // resolving ScormManager to swap in a different implementation (e.g. LambdaUnzipper).
+        $this->app->bind(UnzipperInterface::class, function () {
+            $archive = config('scorm.archive');
+            $scorm   = config('scorm.disk');
+
+            if (empty($archive) || empty($scorm)) {
+                throw new \InvalidArgumentException('scorm.archive and scorm.disk must both be configured.');
+            }
+
+            return new LocalUnzipper(
+                Storage::disk($archive),
+                Storage::disk($scorm),
+            );
         });
+
+        // ScormManager is the only public entry point — it wires ScormDisk internally.
+        $this->app->bind(ScormManager::class, function ($app) {
+            return new ScormManager($app->make(UnzipperInterface::class));
+        });
+
+        // Preserve the string alias for backwards compatibility.
+        $this->app->alias(ScormManager::class, 'scorm-manager');
     }
 
     public function boot()

@@ -2,275 +2,270 @@
 
 namespace Peopleaps\Scorm\Manager;
 
+use DateTime;
+use DOMDocument;
 use Exception;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Peopleaps\Scorm\Contract\UnzipperInterface;
+use Peopleaps\Scorm\Entity\Scorm;
+use Peopleaps\Scorm\Exception\InvalidScormArchiveException;
 use Peopleaps\Scorm\Exception\StorageNotFoundException;
-use ZipArchive;
+use Peopleaps\Scorm\Library\ScormLib;
 
 class ScormDisk
 {
-    /**
-     * Extract a zip from the archive S3 bucket and stream each entry
-     * directly into the scorm S3 bucket — no local app-storage I/O.
-     *
-     * Strategy:
-     *   1. Stream the zip from archive-S3 into a PHP temporary file
-     *      (php://temp or sys_get_temp_dir). This is an OS-level tmp file
-     *      completely separate from Laravel's Storage / app disk.
-     *   2. Open the tmp file with ZipArchive (which requires a real path).
-     *   3. Stream every entry straight to the scorm S3 bucket.
-     *   4. Delete the tmp file immediately — it is never written to the
-     *      Laravel default disk or app storage directory.
-     *
-     * @param  UploadedFile|string  $file        Local path or UploadedFile for
-     *                                           an already-downloaded zip. Pass
-     *                                           null and use readScormArchive()
-     *                                           when the zip lives on S3.
-     * @param  string               $target_dir  S3 key prefix (folder) for output.
-     * @return bool
-     */
-    public function unzipper($file, string $target_dir): bool
-    {
-        $target_dir = $this->normalizeS3Key($target_dir);
+    private ScormLib $scormLib;
 
-        $zip = new ZipArchive();
-
-        if ($zip->open($file) !== true) {
-            Log::error('ScormDisk::unzipper — ZipArchive could not open file: ' . $file);
-            return false;
-        }
-
-        try {
-            /** @var FilesystemAdapter $disk */
-            $disk = $this->getDisk();
-
-            for ($i = 0; $i < $zip->numFiles; ++$i) {
-                $zipEntryName = $zip->getNameIndex($i);
-
-                // Normalise the entry name to a clean S3 key segment.
-                $entryKey = $this->normalizeS3Key($zipEntryName);
-                $destination = $this->joinS3($target_dir, $entryKey);
-
-                if ($this->isDirectory($zipEntryName)) {
-                    // S3 has no real directories; creating a zero-byte placeholder
-                    // is optional but kept for compatibility with code that checks
-                    // directory existence via $disk->directoryExists().
-                    $disk->createDirectory($destination);
-                    continue;
-                }
-
-                $stream = $zip->getStream($zipEntryName);
-                if (!is_resource($stream)) {
-                    Log::warning('ScormDisk::unzipper — could not get stream for entry: ' . $zipEntryName);
-                    continue;
-                }
-
-                // writeStream() passes the resource to the S3 SDK which may
-                // close it internally before returning. Guard before fclose.
-                $disk->writeStream($destination, $stream);
-                if (is_resource($stream)) {
-                    fclose($stream);
-                }
-            }
-        } finally {
-            $zip->close();
-        }
-
-        return true;
+    public function __construct(
+        private readonly UnzipperInterface $unzipper,
+        ?ScormLib $scormLib = null,
+    ) {
+        $this->scormLib = $scormLib ?? new ScormLib();
     }
 
     /**
-     * Read a SCORM zip from the archive S3 bucket, expose its local tmp path
-     * to $fn, then clean up — without writing to Laravel's app Storage disk.
-     *
-     * Flow:
-     *   archive-S3 ──stream──► php://temp (OS tmp, not app disk)
-     *                                │
-     *                           ZipArchive::open()
-     *                                │
-     *                         call $fn($tmpPath)  ← unzipper() is called here
-     *                                │
-     *                           unlink($tmpPath)
-     *
-     * @param  string    $file  S3 object key inside the archive bucket.
-     * @param  callable  $fn    Receives the real local tmp file path.
-     * @throws StorageNotFoundException|Exception
+     * Whether extracted SCORM content for the given UUID already exists on the
+     * scorm disk (detected by the presence of imsmanifest.xml).
      */
-    public function readScormArchive(string $file, callable $fn): void
+    public function contentExists(string $uuid): bool
     {
-        $archiveDisk = $this->getArchiveDisk();
+        $disk   = $this->getScormDisk();
+        $prefix = $this->normalizeKey($uuid);
 
-        Log::info('ScormDisk::readScormArchive — processing: ' . $file);
-
-        if (!$archiveDisk->exists($file)) {
-            Log::error('ScormDisk::readScormArchive — not found on archive disk: ' . $file);
-            throw new StorageNotFoundException('scorm_archive_not_found_on_archive_disk: ' . $file);
+        if ($disk->exists($prefix . '/imsmanifest.xml')) {
+            return true;
         }
 
-        // Pull the S3 object as a stream.
-        $s3Stream = $archiveDisk->readStream($file);
-        if (!is_resource($s3Stream)) {
-            Log::error('ScormDisk::readScormArchive — failed to open stream for: ' . $file);
-            throw new StorageNotFoundException('failed_to_read_scorm_archive_stream: ' . $file);
+        foreach ($disk->allFiles($prefix) as $path) {
+            if (str_ends_with($path, 'imsmanifest.xml')) {
+                return true;
+            }
         }
 
-        // Write into a true OS temp file (never touches app Storage disk).
-        $tmpPath = $this->streamToTempFile($s3Stream);
+        return false;
+    }
+
+    /**
+     * Parse imsmanifest.xml from the scorm disk for the given UUID and return
+     * structured metadata ready for persistence.
+     *
+     * @return array{
+     *   identifier: string,
+     *   title: string,
+     *   version: string,
+     *   entryUrl: string,
+     *   scos: \Peopleaps\Scorm\Entity\Sco[],
+     *   created_at: string|null,
+     *   created_by: string|null,
+     * }
+     * @throws InvalidScormArchiveException
+     */
+    public function loadMetadata(string $uuid): array
+    {
+        $disk         = $this->getScormDisk();
+        $prefix       = $this->normalizeKey($uuid);
+        $manifestPath = $this->findManifest($disk, $prefix);
+
+        if ($manifestPath === null) {
+            throw new InvalidScormArchiveException('cannot_load_imsmanifest_message');
+        }
+
+        $xml = $disk->get($manifestPath);
+        if (empty($xml)) {
+            throw new InvalidScormArchiveException('cannot_load_imsmanifest_message');
+        }
+
+        $dom = $this->parseManifestXml($xml);
+
+        $manifest = $dom->getElementsByTagName('manifest')->item(0);
+        if (!$manifest || !$manifest->attributes->getNamedItem('identifier')) {
+            throw new InvalidScormArchiveException('invalid_scorm_manifest_identifier');
+        }
+
+        $version = $this->resolveScormVersion($dom);
+        $scos    = $this->scormLib->parseOrganizationsNode($dom);
+
+        if (empty($scos)) {
+            throw new InvalidScormArchiveException('no_sco_in_scorm_archive_message');
+        }
+
+        $entryUrl = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl ?? '';
+        $entryUrl = $this->prefixEntryUrl($entryUrl, $manifestPath);
+
+        return [
+            'identifier' => $manifest->attributes->getNamedItem('identifier')->nodeValue,
+            'title'      => trim($dom->getElementsByTagName('title')->item(0)?->textContent ?? ''),
+            'version'    => $version,
+            'entryUrl'   => $entryUrl,
+            'scos'       => $scos,
+            'created_at' => $this->extractCreationDate($dom),
+            'created_by' => $this->extractCreator($dom),
+        ];
+    }
+
+    /**
+     * Delegate extraction of the archive at $archiveKey into the scorm disk
+     * under the $uuid prefix to the injected UnzipperInterface.
+     */
+    public function extractFromArchive(string $archiveKey, string $uuid): void
+    {
+        $this->unzipper->extract($archiveKey, $uuid);
+    }
+
+    /**
+     * Store an uploaded zip on the archive disk at the given key.
+     */
+    public function putArchiveFile(UploadedFile $file, string $archiveKey): void
+    {
+        $stream = fopen($file->getRealPath(), 'r');
+        if ($stream === false) {
+            throw new Exception('Could not open uploaded file: ' . $file->getClientOriginalName());
+        }
 
         try {
-            call_user_func($fn, $tmpPath);
+            $this->getArchiveDisk()->writeStream($archiveKey, $stream);
         } finally {
-            // Always clean up the tmp file, even if $fn throws.
-            if (file_exists($tmpPath)) {
-                unlink($tmpPath);
-                Log::info('ScormDisk::readScormArchive — removed tmp file: ' . $tmpPath);
-            }
+            fclose($stream);
         }
     }
 
     /**
-     * Delete both the content folder (scorm disk) and the archive folder
+     * Delete both the content directory (scorm disk) and the archive directory
      * (archive disk) for the given UUID.
      *
-     * @param  string  $uuid
-     * @return bool  true only when the content directory was removed.
+     * @return bool True when the content directory was successfully removed.
      */
     public function deleteScorm(string $uuid): bool
     {
-        $this->deleteScormArchive($uuid);
-        return $this->deleteScormContent($uuid);
+        $this->deleteDirectory($this->getArchiveDisk(), $uuid, 'archive');
+        return $this->deleteDirectory($this->getScormDisk(), $uuid, 'scorm');
     }
 
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Copy an S3 stream into a true OS temporary file and return its path.
-     * Uses sys_get_temp_dir() — completely separate from Laravel Storage.
-     *
-     * @param  resource  $stream
-     * @return string  Absolute path to the tmp file.
-     * @throws Exception
-     */
-    private function streamToTempFile($stream): string
+    private function normalizeKey(string $path): string
     {
-        $tmpPath = tempnam(sys_get_temp_dir(), 'scorm_');
-        if ($tmpPath === false) {
-            throw new Exception('ScormDisk — could not create OS temp file.');
-        }
-
-        $tmpHandle = fopen($tmpPath, 'wb');
-        if ($tmpHandle === false) {
-            unlink($tmpPath);
-            throw new Exception('ScormDisk — could not open OS temp file for writing: ' . $tmpPath);
-        }
-
-        try {
-            stream_copy_to_stream($stream, $tmpHandle);
-        } finally {
-            fclose($tmpHandle);
-            // The S3 SDK / Flysystem may close the stream internally during
-            // stream_copy_to_stream. Guard with is_resource before fclose to
-            // avoid "supplied resource is not a valid stream resource" errors.
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-        }
-
-        return $tmpPath;
-    }
-
-    /**
-     * Delete the SCORM content directory from the scorm S3 bucket.
-     */
-    private function deleteScormContent(string $folderHashedName): bool
-    {
-        try {
-            return (bool) $this->getDisk()->deleteDirectory($folderHashedName);
-        } catch (Exception $ex) {
-            Log::error('ScormDisk::deleteScormContent — ' . $ex->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Delete the SCORM archive directory from the archive S3 bucket.
-     */
-    private function deleteScormArchive(string $uuid): bool
-    {
-        try {
-            return (bool) $this->getArchiveDisk()->deleteDirectory($uuid);
-        } catch (Exception $ex) {
-            Log::error('ScormDisk::deleteScormArchive — ' . $ex->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Join path segments using '/' — always correct for S3 keys regardless
-     * of the host OS's DIRECTORY_SEPARATOR.
-     */
-    private function joinS3(string ...$paths): string
-    {
-        return implode('/', array_filter($paths, fn($p) => $p !== ''));
-    }
-
-    /**
-     * Normalise a path to use '/' (S3 convention).
-     * Strips a trailing slash so the result is always a key prefix, not
-     * a directory placeholder.
-     */
-    private function normalizeS3Key(string $path): string
-    {
-        // Convert OS separators → S3 separator, then strip trailing slash.
         return rtrim(str_replace(DIRECTORY_SEPARATOR, '/', $path), '/');
     }
 
-    /**
-     * Returns true when the zip entry represents a directory.
-     */
-    private function isDirectory(string $zipEntryName): bool
+    private function findManifest(FilesystemAdapter $disk, string $prefix): ?string
     {
-        return str_ends_with($zipEntryName, '/');
+        $direct = $prefix . '/imsmanifest.xml';
+        if ($disk->exists($direct)) {
+            return $direct;
+        }
+
+        foreach ($disk->allFiles($prefix) as $path) {
+            if (str_ends_with($path, 'imsmanifest.xml')) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    private function parseManifestXml(string $xml): DOMDocument
+    {
+        // Escape bare ampersands that would otherwise break XML parsing.
+        $xml = preg_replace('/&(?!amp;|lt;|gt;|apos;|quot;)/', '&amp;', $xml) ?? $xml;
+
+        $dom = new DOMDocument();
+        if (!$dom->loadXML($xml)) {
+            throw new InvalidScormArchiveException('cannot_load_imsmanifest_message');
+        }
+
+        return $dom;
+    }
+
+    private function resolveScormVersion(DOMDocument $dom): string
+    {
+        $nodes = $dom->getElementsByTagName('schemaversion');
+        if ($nodes->length === 0) {
+            throw new InvalidScormArchiveException('invalid_scorm_version_message');
+        }
+
+        $version = trim($nodes->item(0)->textContent);
+
+        if ($version === '1.2') {
+            return Scorm::SCORM_12;
+        }
+
+        if (in_array($version, ['CAM 1.3', '2004 3rd Edition', '2004 4th Edition'], true)) {
+            return Scorm::SCORM_2004;
+        }
+
+        throw new InvalidScormArchiveException('invalid_scorm_version_message');
     }
 
     /**
-     * Resolve and validate the scorm content disk.
-     *
-     * @return FilesystemAdapter
-     * @throws StorageNotFoundException
+     * Prepend the manifest's directory to the entry URL when the manifest is
+     * nested inside a sub-folder (e.g. "content/imsmanifest.xml").
      */
-    private function getDisk(): FilesystemAdapter
+    private function prefixEntryUrl(string $entryUrl, string $manifestPath): string
     {
-        $diskName = config('scorm.disk');
-        if (empty($diskName)) {
-            throw new StorageNotFoundException('scorm_disk_not_configured');
+        $dir = dirname($manifestPath);
+
+        if ($dir === '' || $dir === '.') {
+            return $entryUrl;
         }
-        if (!config()->has('filesystems.disks.' . $diskName)) {
-            throw new StorageNotFoundException('scorm_disk_not_defined: ' . $diskName);
-        }
-        return Storage::disk($diskName);
+
+        return $dir . '/' . ltrim($entryUrl, '/');
     }
 
-    /**
-     * Resolve and validate the scorm archive disk.
-     *
-     * @return FilesystemAdapter
-     * @throws StorageNotFoundException
-     */
+    private function extractCreationDate(DOMDocument $dom): ?string
+    {
+        $raw = trim($dom->getElementsByTagName('datetime')->item(0)?->textContent ?? '');
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return (new DateTime($raw))->format('Y-m-d H:i:s');
+        } catch (Exception) {
+            return $raw;
+        }
+    }
+
+    private function extractCreator(DOMDocument $dom): ?string
+    {
+        $value = trim($dom->getElementsByTagName('creator')->item(0)?->textContent ?? '');
+        return $value !== '' ? $value : null;
+    }
+
+    private function deleteDirectory(FilesystemAdapter $disk, string $uuid, string $label): bool
+    {
+        try {
+            return (bool) $disk->deleteDirectory($uuid);
+        } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::error("ScormDisk: failed to delete {$label} directory for {$uuid}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function getScormDisk(): FilesystemAdapter
+    {
+        return $this->resolveDisk(config('scorm.disk'), 'scorm_disk');
+    }
+
     private function getArchiveDisk(): FilesystemAdapter
     {
-        $archiveDiskName = config('scorm.archive');
-        if (empty($archiveDiskName)) {
-            throw new StorageNotFoundException('scorm_archive_disk_not_configured');
+        return $this->resolveDisk(config('scorm.archive'), 'scorm_archive_disk');
+    }
+
+    private function resolveDisk(?string $name, string $label): FilesystemAdapter
+    {
+        if (empty($name)) {
+            throw new StorageNotFoundException("{$label}_not_configured");
         }
-        if (!config()->has('filesystems.disks.' . $archiveDiskName)) {
-            throw new StorageNotFoundException('scorm_archive_disk_not_defined: ' . $archiveDiskName);
+
+        if (!config()->has('filesystems.disks.' . $name)) {
+            throw new StorageNotFoundException("{$label}_not_defined: {$name}");
         }
-        return Storage::disk($archiveDiskName);
+
+        return Storage::disk($name);
     }
 }
