@@ -94,7 +94,7 @@ class ScormDisk
         }
 
         $entryUrl = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl ?? '';
-        $entryUrl = $this->prefixEntryUrl($entryUrl, $manifestPath);
+        // $entryUrl = $this->prefixEntryUrl($entryUrl, $manifestPath);
 
         return [
             'identifier' => $manifest->attributes->getNamedItem('identifier')->nodeValue,
