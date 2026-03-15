@@ -10,10 +10,10 @@
         }
     ],
     "require": {
-        "php": "^7.4 || ^8.0",
+        "php": "^8.0",
         "doctrine/common": "^3.1",
         "league/flysystem": "^2.0 || ^3.0",
-        "nesbot/carbon": "^2.42",
+        "nesbot/carbon": "^2.42 || ^3.0",
         "ext-zip": "*",
         "ext-dom": "*"
     },
