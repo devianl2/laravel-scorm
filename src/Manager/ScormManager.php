@@ -1,737 +1,554 @@
 <?php
 
-
 namespace Peopleaps\Scorm\Manager;
 
 use Carbon\Carbon;
-use DOMDocument;
+use DateInterval;
+use DateTime;
+use Exception;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
+use Peopleaps\Scorm\Contract\UnzipperInterface;
 use Peopleaps\Scorm\Entity\Scorm;
+use Peopleaps\Scorm\Entity\Sco;
 use Peopleaps\Scorm\Entity\ScoTracking;
 use Peopleaps\Scorm\Exception\InvalidScormArchiveException;
-use Peopleaps\Scorm\Library\ScormLib;
 use Peopleaps\Scorm\Model\ScormModel;
 use Peopleaps\Scorm\Model\ScormScoModel;
 use Peopleaps\Scorm\Model\ScormScoTrackingModel;
-use Illuminate\Support\Str;
-use Peopleaps\Scorm\Entity\Sco;
 
 class ScormManager
 {
-    /** @var ScormLib */
-    private $scormLib;
-    /** @var ScormDisk */
-    private $scormDisk;
-    /** @var string $uuid */
-    private $uuid;
+    private readonly ScormDisk $scormDisk;
+
+    public function __construct(UnzipperInterface $unzipper)
+    {
+        $this->scormDisk = new ScormDisk($unzipper);
+    }
+
+    // -------------------------------------------------------------------------
+    // Upload / ingest
+    // -------------------------------------------------------------------------
 
     /**
-     * Constructor.
+     * Ingest a SCORM package already present on the archive disk (e.g. uploaded
+     * directly to S3). Pass the object key as $archiveKey.
      *
-     * @param string $filesDir
-     * @param string $uploadDir
-     */
-    public function __construct()
-    {
-        $this->scormLib = new ScormLib();
-        $this->scormDisk = new ScormDisk();
-    }
-
-    public function uploadScormFromUri($file, $uuid = null)
-    {
-        // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
-        $this->uuid =  $uuid ?? Str::uuid()->toString();
-
-        // Validate that the file parameter is not empty
-        if (empty($file)) {
-            throw new InvalidScormArchiveException('file_parameter_empty');
-        }
-
-        // Log the file being processed for debugging
-        \Log::info('Uploading SCORM from URI: ' . $file);
-
-        $scorm = null;
-        $this->scormDisk->readScormArchive($file, function ($path) use (&$scorm, $file, $uuid) {
-            $filename = basename($file);
-            $scorm = $this->saveScorm($path, $filename, $uuid);
-        });
-        return $scorm;
-    }
-
-    /**
-     * @param UploadedFile $file
-     * @param null|string $uuid
-     * @return ScormModel
      * @throws InvalidScormArchiveException
      */
-    public function uploadScormArchive(UploadedFile $file, $uuid = null)
+    public function uploadScormFromUri(string $archiveKey, ?string $uuid = null): ScormModel
     {
-        // $uuid is meant for user to update scorm content. Hence, if user want to update content should parse in existing uuid
-        $this->uuid =  $uuid ?? Str::uuid()->toString();
+        $uuid = $uuid ?? Str::uuid()->toString();
 
-        return $this->saveScorm($file, $file->getClientOriginalName(), $uuid);
-    }
-
-    /**
-     *  Checks if it is a valid scorm archive
-     * 
-     * @param string|UploadedFile $file zip.       
-     */
-    private function validatePackage($file)
-    {
-        $zip = new \ZipArchive();
-        $openValue = $zip->open($file);
-        $isScormArchive = (true === $openValue) && $zip->getStream('imsmanifest.xml');
-
-        $zip->close();
-        if (!$isScormArchive) {
-            $this->onError('invalid_scorm_archive_message');
+        if (!$this->scormDisk->contentExists($uuid)) {
+            $this->scormDisk->extractFromArchive($archiveKey, $uuid);
         }
+
+        return $this->persistScorm(
+            uuid: $uuid,
+            filename: basename($archiveKey),
+            packageSize: 0,
+        );
     }
 
     /**
-     *  Save scorm data
+     * Accept a freshly-uploaded zip file, store it on the archive disk, extract
+     * it and persist the resulting SCORM record.
      *
-     * @param string|UploadedFile $file zip.
-     * @param string $filename
-     * @param null|string $uuid
-     * @return ScormModel
      * @throws InvalidScormArchiveException
      */
-    private function saveScorm($file, $filename, $uuid = null)
+    public function uploadScormArchive(UploadedFile $file, ?string $uuid = null): ScormModel
     {
-        $this->validatePackage($file);
-        $scormData  =   $this->generateScorm($file);
-        // save to db
-        if (is_null($scormData) || !is_array($scormData)) {
-            $this->onError('invalid_scorm_data');
+        $uuid       = $uuid ?? Str::uuid()->toString();
+        $archiveKey = $uuid . '/' . $file->getClientOriginalName();
+
+        $this->scormDisk->putArchiveFile($file, $archiveKey);
+
+        if (!$this->scormDisk->contentExists($uuid)) {
+            $this->scormDisk->extractFromArchive($archiveKey, $uuid);
         }
 
-        // This uuid is use when the admin wants to edit existing scorm file.
-        if (!empty($uuid)) {
-            $this->uuid =   $uuid; // Overwrite system generated uuid
-        }
-
-        /**
-         * ScormModel::whereUuid Query Builder style equals ScormModel::where('uuid',$value)
-         * 
-         * From Laravel doc https://laravel.com/docs/5.0/queries#advanced-wheres.
-         * Dynamic Where Clauses
-         * You may even use "dynamic" where statements to fluently build where statements using magic methods:
-         * 
-         * Examples: 
-         * 
-         * $admin = DB::table('users')->whereId(1)->first();
-         * From laravel framework https://github.com/laravel/framework/blob/9.x/src/Illuminate/Database/Query/Builder.php'
-         *  Handle dynamic method calls into the method.
-         *  return $this->dynamicWhere($method, $parameters);
-         **/
-        // $scorm = ScormModel::whereOriginFile($filename);
-        // Uuid indicator is better than filename for update content or add new content.
-        $scorm = ScormModel::where('uuid', $this->uuid);
-
-        // Check if scom package already exists to drop old one.
-        if (!$scorm->exists()) {
-            $scorm = new ScormModel();
-        } else {
-            $scorm = $scorm->first();
-            $this->deleteScormData($scorm);
-        }
-
-        $scorm->uuid =   $this->uuid;
-        $scorm->title =   $scormData['title'];
-        $scorm->version =   $scormData['version'];
-        $scorm->entry_url =   $scormData['entryUrl'];
-        $scorm->identifier =   $scormData['identifier'];
-        $scorm->origin_file =   $filename;
-        $scorm->save();
-
-        if (!empty($scormData['scos']) && is_array($scormData['scos'])) {
-            /** @var Sco $scoData */
-            foreach ($scormData['scos'] as $scoData) {
-                $sco = $this->saveScormScos($scorm->id, $scoData);
-                if ($scoData->scoChildren) {
-                    foreach ($scoData->scoChildren as $scoChild) {
-                        $this->saveScormScos($scorm->id, $scoChild, $sco->id);
-                    }
-                }
-            }
-        }
-
-        return  $scorm;
+        return $this->persistScorm(
+            uuid: $uuid,
+            filename: $file->getClientOriginalName(),
+            packageSize: $file->getSize(),
+        );
     }
 
-    /**
-     * Save Scorm sco and it's nested children
-     * @param int $scorm_id scorm id.
-     * @param Sco $scoData Sco data to be store.
-     * @param int $sco_parent_id sco parent id for children
-     */
-    private function saveScormScos($scorm_id, $scoData, $sco_parent_id = null)
+    // -------------------------------------------------------------------------
+    // Delete
+    // -------------------------------------------------------------------------
+
+    public function deleteScorm(ScormModel $model): void
     {
-        $sco    =   new ScormScoModel();
-        $sco->scorm_id  =   $scorm_id;
-        $sco->uuid  =   $scoData->uuid;
-        $sco->sco_parent_id  =   $sco_parent_id;
-        $sco->entry_url  =   $scoData->entryUrl;
-        $sco->identifier  =   $scoData->identifier;
-        $sco->title  =   $scoData->title;
-        $sco->visible  =   $scoData->visible;
-        $sco->sco_parameters  =   $scoData->parameters;
-        $sco->launch_data  =   $scoData->launchData;
-        $sco->max_time_allowed  =   $scoData->maxTimeAllowed;
-        $sco->time_limit_action  =   $scoData->timeLimitAction;
-        $sco->block  =   $scoData->block;
-        $sco->score_int  =   $scoData->scoreToPassInt;
-        $sco->score_decimal  =   $scoData->scoreToPassDecimal;
-        $sco->completion_threshold  =   $scoData->completionThreshold;
-        $sco->prerequisites  =   $scoData->prerequisites;
-        $sco->save();
-        return $sco;
+        $this->deleteScormData($model);
+        $model->delete();
     }
 
-    /**
-     * @param string|UploadedFile $file zip.       
-     */
-    private function parseScormArchive($file)
+    // -------------------------------------------------------------------------
+    // Query helpers
+    // -------------------------------------------------------------------------
+
+    public function getScos(int $scormId)
     {
-        $data = [];
-        $contents = '';
-        $zip = new \ZipArchive();
-
-        $zip->open($file);
-        $stream = $zip->getStream('imsmanifest.xml');
-
-        while (!feof($stream)) {
-            $contents .= fread($stream, 2);
-        }
-
-
-        $dom = new DOMDocument();
-
-        if (!$dom->loadXML($contents)) {
-            $this->onError('cannot_load_imsmanifest_message');
-        }
-
-        $manifest = $dom->getElementsByTagName('manifest')->item(0);
-        if (!is_null($manifest->attributes->getNamedItem('identifier'))) {
-            $data['identifier'] = $manifest->attributes->getNamedItem('identifier')->nodeValue;
-        } else {
-            $this->onError('invalid_scorm_manifest_identifier');
-        }
-        $titles = $dom->getElementsByTagName('title');
-        if ($titles->length > 0) {
-            $data['title'] = Str::of($titles->item(0)->textContent)->trim('/n')->trim();
-        }
-
-        $scormVersionElements = $dom->getElementsByTagName('schemaversion');
-        if ($scormVersionElements->length > 0) {
-            switch ($scormVersionElements->item(0)->textContent) {
-                case '1.2':
-                    $data['version'] = Scorm::SCORM_12;
-                    break;
-                case 'CAM 1.3':
-                case '2004 3rd Edition':
-                case '2004 4th Edition':
-                    $data['version'] = Scorm::SCORM_2004;
-                    break;
-                default:
-                    $this->onError('invalid_scorm_version_message');
-            }
-        } else {
-            $this->onError('invalid_scorm_version_message');
-        }
-        $scos = $this->scormLib->parseOrganizationsNode($dom);
-
-        if (0 >= count($scos)) {
-            $this->onError('no_sco_in_scorm_archive_message');
-        }
-
-        $data['entryUrl'] = $scos[0]->entryUrl ?? $scos[0]->scoChildren[0]->entryUrl;
-        $data['scos'] = $scos;
-
-        return $data;
+        return ScormScoModel::with('scorm')->where('scorm_id', $scormId)->get();
     }
 
-    public function deleteScorm($model)
+    public function getScoByUuid(string $scoUuid): ScormScoModel
     {
-        // Delete after the previous item is stored
-        if ($model) {
-            $this->deleteScormData($model);
-            // Delete folder from server
-            $this->deleteScormFolder($model->uuid);
-            $model->delete(); // delete scorm
-        }
+        return ScormScoModel::with('scorm')->where('uuid', $scoUuid)->firstOrFail();
     }
 
-    private function deleteScormData($model)
-    {
-        // Delete after the previous item is stored
-        $oldScos = $model->scos()->get();
-
-        // Delete all tracking associate with sco
-        foreach ($oldScos as $oldSco) {
-            $oldSco->scoTrackings()->delete();
-        }
-        $model->scos()->delete(); // delete scos
-    }
-
-    /**
-     * @param $folderHashedName
-     * @return bool
-     */
-    protected function deleteScormFolder($folderHashedName)
-    {
-        return $this->scormDisk->deleteScorm($folderHashedName);
-    }
-
-    /**
-     * @param string|UploadedFile $file zip.       
-     * @return array
-     * @throws InvalidScormArchiveException
-     */
-    private function generateScorm($file)
-    {
-        $scormData = $this->parseScormArchive($file);
-        /**
-         * Unzip a given ZIP file into the web resources directory.
-         *
-         * @param string $hashName name of the destination directory
-         */
-        $this->scormDisk->unzipper($file, $this->uuid);
-
-        return [
-            'identifier' => $scormData['identifier'],
-            'uuid' => $this->uuid,
-            'title' => $scormData['title'], // to follow standard file data format
-            'version' => $scormData['version'],
-            'entryUrl' => $scormData['entryUrl'],
-            'scos' => $scormData['scos'],
-        ];
-    }
-
-    /**
-     * Get SCO list
-     * @param $scormId
-     * @return \Illuminate\Database\Eloquent\Builder[]|\Illuminate\Database\Eloquent\Collection
-     */
-    public function getScos($scormId)
-    {
-        $scos  =   ScormScoModel::with([
-            'scorm'
-        ])->where('scorm_id', $scormId)
-            ->get();
-
-        return $scos;
-    }
-
-    /**
-     * Get sco by uuid
-     * @param $scoUuid
-     * @return null|\Illuminate\Database\Eloquent\Builder|Model
-     */
-    public function getScoByUuid($scoUuid)
-    {
-        $sco    =   ScormScoModel::with(['scorm'])
-            ->where('uuid', $scoUuid)
-            ->firstOrFail();
-
-        return $sco;
-    }
-
-    public function getUserResult($scoId, $userId)
+    public function getUserResult(int $scoId, int $userId): ?ScormScoTrackingModel
     {
         return ScormScoTrackingModel::where('sco_id', $scoId)->where('user_id', $userId)->first();
     }
 
-    public function createScoTracking($scoUuid, $userId = null, $userName = null)
-    {
-        $sco    =   ScormScoModel::where('uuid', $scoUuid)->firstOrFail();
+    // -------------------------------------------------------------------------
+    // Tracking
+    // -------------------------------------------------------------------------
 
+    public function createScoTracking(string $scoUuid, mixed $userId = null, ?string $userName = null): ScoTracking
+    {
+        $sco     = ScormScoModel::where('uuid', $scoUuid)->firstOrFail();
         $version = $sco->scorm->version;
-        $scoTracking = new ScoTracking();
-        $scoTracking->setSco($sco->toArray());
 
-        $cmi = null;
-        switch ($version) {
-            case Scorm::SCORM_12:
-                $scoTracking->setLessonStatus('not attempted');
-                $scoTracking->setSuspendData('');
-                $scoTracking->setEntry('ab-initio');
-                $scoTracking->setLessonLocation('');
-                $scoTracking->setCredit('no-credit');
-                $scoTracking->setTotalTimeInt(0);
-                $scoTracking->setSessionTime(0);
-                $scoTracking->setLessonMode('normal');
-                $scoTracking->setExitMode('');
+        $tracking = new ScoTracking();
+        $tracking->setSco($sco->toArray());
 
-                if (is_null($sco->prerequisites)) {
-                    $scoTracking->setIsLocked(false);
-                } else {
-                    $scoTracking->setIsLocked(true);
-                }
-                $cmi = [
-                    'cmi.core.entry' => $scoTracking->getEntry(),
-                    'cmi.core.student_id' => $userId,
-                    'cmi.core.student_name' => $userName,
-                ];
+        $cmi = match ($version) {
+            Scorm::SCORM_12 => $this->initScorm12Tracking($tracking, $sco, $userId, $userName),
+            Scorm::SCORM_2004 => $this->initScorm2004Tracking($tracking, $userId, $userName),
+            default => [],
+        };
 
-                break;
-            case Scorm::SCORM_2004:
-                $scoTracking->setTotalTimeString('PT0S');
-                $scoTracking->setCompletionStatus('unknown');
-                $scoTracking->setLessonStatus('unknown');
-                $scoTracking->setIsLocked(false);
-                $cmi = [
-                    'cmi.entry' => 'ab-initio',
-                    'cmi.learner_id' =>  $userId,
-                    'cmi.learner_name' => $userName,
-                    'cmi.scaled_passing_score' => 0.5,
-                ];
-                break;
-        }
+        $tracking->setUserId($userId);
+        $tracking->setDetails($cmi);
 
-        $scoTracking->setUserId($userId);
-        $scoTracking->setDetails($cmi);
+        $stored = ScormScoTrackingModel::firstOrCreate(
+            ['user_id' => $userId, 'sco_id' => $sco->id],
+            [
+                'uuid'               => Str::uuid()->toString(),
+                'progression'        => $tracking->getProgression(),
+                'score_raw'          => $tracking->getScoreRaw(),
+                'score_min'          => $tracking->getScoreMin(),
+                'score_max'          => $tracking->getScoreMax(),
+                'score_scaled'       => $tracking->getScoreScaled(),
+                'lesson_status'      => $tracking->getLessonStatus(),
+                'completion_status'  => $tracking->getCompletionStatus(),
+                'session_time'       => $tracking->getSessionTime(),
+                'total_time_int'     => $tracking->getTotalTimeInt(),
+                'total_time_string'  => $tracking->getTotalTimeString(),
+                'entry'              => $tracking->getEntry(),
+                'suspend_data'       => $tracking->getSuspendData(),
+                'credit'             => $tracking->getCredit(),
+                'exit_mode'          => $tracking->getExitMode(),
+                'lesson_location'    => $tracking->getLessonLocation(),
+                'lesson_mode'        => $tracking->getLessonMode(),
+                'is_locked'          => $tracking->getIsLocked(),
+                'details'            => $tracking->getDetails(),
+                'latest_date'        => $tracking->getLatestDate(),
+                'created_at'         => Carbon::now(),
+                'updated_at'         => Carbon::now(),
+            ],
+        );
 
-        // Create a new tracking model
-        $storeTracking  =   ScormScoTrackingModel::firstOrCreate([
-            'user_id'   =>  $userId,
-            'sco_id'    =>  $sco->id
-        ], [
-            'uuid'  =>   Str::uuid()->toString(),
-            'progression'  =>  $scoTracking->getProgression(),
-            'score_raw'  =>  $scoTracking->getScoreRaw(),
-            'score_min'  =>  $scoTracking->getScoreMin(),
-            'score_max'  =>  $scoTracking->getScoreMax(),
-            'score_scaled'  =>  $scoTracking->getScoreScaled(),
-            'lesson_status'  =>  $scoTracking->getLessonStatus(),
-            'completion_status'  =>  $scoTracking->getCompletionStatus(),
-            'session_time'  =>  $scoTracking->getSessionTime(),
-            'total_time_int'  =>  $scoTracking->getTotalTimeInt(),
-            'total_time_string'  =>  $scoTracking->getTotalTimeString(),
-            'entry'  =>  $scoTracking->getEntry(),
-            'suspend_data'  =>  $scoTracking->getSuspendData(),
-            'credit'  =>  $scoTracking->getCredit(),
-            'exit_mode'  =>  $scoTracking->getExitMode(),
-            'lesson_location'  =>  $scoTracking->getLessonLocation(),
-            'lesson_mode'  =>  $scoTracking->getLessonMode(),
-            'is_locked'  =>  $scoTracking->getIsLocked(),
-            'details'  =>  $scoTracking->getDetails(),
-            'latest_date'  =>  $scoTracking->getLatestDate(),
-            'created_at'  =>  Carbon::now(),
-            'updated_at'  =>  Carbon::now(),
-        ]);
+        $this->hydrateTrackingFromModel($tracking, $stored);
 
-        $scoTracking->setUuid($storeTracking->uuid);
-        $scoTracking->setProgression($storeTracking->progression);
-        $scoTracking->setScoreRaw($storeTracking->score_raw);
-        $scoTracking->setScoreMin($storeTracking->score_min);
-        $scoTracking->setScoreMax($storeTracking->score_max);
-        $scoTracking->setScoreScaled($storeTracking->score_scaled);
-        $scoTracking->setLessonStatus($storeTracking->lesson_status);
-        $scoTracking->setCompletionStatus($storeTracking->completion_status);
-        $scoTracking->setSessionTime($storeTracking->session_time);
-        $scoTracking->setTotalTimeInt($storeTracking->total_time_int);
-        $scoTracking->setTotalTimeString($storeTracking->total_time_string);
-        $scoTracking->setEntry($storeTracking->entry);
-        $scoTracking->setSuspendData($storeTracking->suspend_data);
-        $scoTracking->setCredit($storeTracking->credit);
-        $scoTracking->setExitMode($storeTracking->exit_mode);
-        $scoTracking->setLessonLocation($storeTracking->lesson_location);
-        $scoTracking->setLessonMode($storeTracking->lesson_mode);
-        $scoTracking->setIsLocked($storeTracking->is_locked);
-        $scoTracking->setDetails($storeTracking->details);
-        $scoTracking->setLatestDate(Carbon::parse($storeTracking->latest_date));
-
-        return $scoTracking;
+        return $tracking;
     }
 
-    public function findScoTrackingId($scoUuid, $scoTrackingUuid)
-    {
-        return ScormScoTrackingModel::with([
-            'sco'
-        ])->whereHas('sco', function (Builder $query) use ($scoUuid) {
-            $query->where('uuid', $scoUuid);
-        })->where('uuid', $scoTrackingUuid)
-            ->firstOrFail();
-    }
-
-    public function checkUserIsCompletedScorm($scormId, $userId)
-    {
-
-        $completedSco    =   [];
-        $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
-
-        foreach ($scos as $sco) {
-            $scoTracking    =   ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->first();
-
-            if ($scoTracking && ($scoTracking->lesson_status == 'passed' || $scoTracking->lesson_status == 'completed')) {
-                $completedSco[] =   true;
-            }
-        }
-
-        if (count($completedSco) == $scos->count()) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    public function updateScoTracking($scoUuid, $userId, $data)
+    public function updateScoTracking(string $scoUuid, mixed $userId, array $data): ScormScoTrackingModel
     {
         $tracking = $this->createScoTracking($scoUuid, $userId);
         $tracking->setLatestDate(Carbon::now());
-        $sco    =   $tracking->getSco();
-        $scorm  =   ScormModel::where('id', $sco['scorm_id'])->firstOrFail();
 
-        $statusPriority = [
-            'unknown' => 0,
-            'not attempted' => 1,
-            'browsed' => 2,
-            'incomplete' => 3,
-            'completed' => 4,
-            'failed' => 5,
-            'passed' => 6,
-        ];
+        $sco   = $tracking->getSco();
+        $scorm = ScormModel::where('id', $sco['scorm_id'])->firstOrFail();
 
-        switch ($scorm->version) {
-            case Scorm::SCORM_12:
-                if (isset($data['cmi.suspend_data']) && !empty($data['cmi.suspend_data'])) {
-                    $tracking->setSuspendData($data['cmi.suspend_data']);
-                }
+        match ($scorm->version) {
+            Scorm::SCORM_12   => $this->applyScorm12Update($tracking, $data),
+            Scorm::SCORM_2004 => $this->applyScorm2004Update($tracking, $data),
+        };
 
-                $scoreRaw = isset($data['cmi.core.score.raw']) ? intval($data['cmi.core.score.raw']) : null;
-                $scoreMin = isset($data['cmi.core.score.min']) ? intval($data['cmi.core.score.min']) : null;
-                $scoreMax = isset($data['cmi.core.score.max']) ? intval($data['cmi.core.score.max']) : null;
-                $lessonStatus = isset($data['cmi.core.lesson_status']) ? $data['cmi.core.lesson_status'] : 'unknown';
-                $sessionTime = isset($data['cmi.core.session_time']) ? $data['cmi.core.session_time'] : null;
-                $sessionTimeInHundredth = $this->convertTimeInHundredth($sessionTime);
-                $progression = !empty($scoreRaw) ? floatval($scoreRaw) : 0;
-                $entry  =   isset($data['cmi.core.entry']) ? $data['cmi.core.entry'] : null;
-                $exit  =   isset($data['cmi.core.exit']) ? $data['cmi.core.exit'] : null;
-                $lessonLocation =   isset($data['cmi.core.lesson_location']) ? $data['cmi.core.lesson_location'] : null;
-                $totalTime  =   isset($data['cmi.core.total_time']) ? $data['cmi.core.total_time'] : 0;
-
-                $tracking->setDetails($data);
-                $tracking->setEntry($entry);
-                $tracking->setExitMode($exit);
-                $tracking->setLessonLocation($lessonLocation);
-                $tracking->setSessionTime($sessionTimeInHundredth);
-
-                // Compute total time
-                $totalTimeInHundredth = $this->convertTimeInHundredth($totalTime);
-                $tracking->setTotalTime($totalTimeInHundredth, Scorm::SCORM_12);
-
-                $bestScore = $tracking->getScoreRaw();
-
-                // Update best score if the current score is better than the previous best score
-
-                if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
-                    $tracking->setScoreRaw($scoreRaw);
-                    $tracking->setScoreMin($scoreMin);
-                    $tracking->setScoreMax($scoreMax);
-                }
-
-                $tracking->setLessonStatus($lessonStatus);
-                $bestStatus = $lessonStatus;
-
-                if (empty($progression) && ('completed' === $bestStatus || 'passed' === $bestStatus)) {
-                    $progression = 100;
-                }
-
-                if ($progression > $tracking->getProgression()) {
-                    $tracking->setProgression($progression);
-                }
-
-                break;
-
-            case Scorm::SCORM_2004:
-                $tracking->setDetails($data);
-
-                if (isset($data['cmi.suspend_data']) && !empty($data['cmi.suspend_data'])) {
-                    $tracking->setSuspendData($data['cmi.suspend_data']);
-                }
-
-                $dataSessionTime = isset($data['cmi.session_time']) ?
-                    $this->formatSessionTime($data['cmi.session_time']) :
-                    'PT0S';
-                $completionStatus = isset($data['cmi.completion_status']) ? $data['cmi.completion_status'] : 'unknown';
-                $successStatus = isset($data['cmi.success_status']) ? $data['cmi.success_status'] : 'unknown';
-                $scoreRaw = isset($data['cmi.score.raw']) ? intval($data['cmi.score.raw']) : null;
-                $scoreMin = isset($data['cmi.score.min']) ? intval($data['cmi.score.min']) : null;
-                $scoreMax = isset($data['cmi.score.max']) ? intval($data['cmi.score.max']) : null;
-                $scoreScaled = isset($data['cmi.score.scaled']) ? floatval($data['cmi.score.scaled']) : null;
-                $progression = isset($data['cmi.progress_measure']) ? floatval($data['cmi.progress_measure']) : 0;
-                $bestScore = $tracking->getScoreRaw();
-
-                // Computes total time
-                $totalTime = new \DateInterval($tracking->getTotalTimeString());
-
-                try {
-                    $sessionTime = new \DateInterval($dataSessionTime);
-                } catch (\Exception $e) {
-                    $sessionTime = new \DateInterval('PT0S');
-                }
-                $computedTime = new \DateTime();
-                $computedTime->setTimestamp(0);
-                $computedTime->add($totalTime);
-                $computedTime->add($sessionTime);
-                $computedTimeInSecond = $computedTime->getTimestamp();
-                $totalTimeInterval = $this->retrieveIntervalFromSeconds($computedTimeInSecond);
-                $data['cmi.total_time'] = $totalTimeInterval;
-                $tracking->setTotalTimeString($totalTimeInterval);
-
-                // Update best score if the current score is better than the previous best score
-                if (empty($bestScore) || (!is_null($scoreRaw) && (int)$scoreRaw > (int)$bestScore)) {
-                    $tracking->setScoreRaw($scoreRaw);
-                    $tracking->setScoreMin($scoreMin);
-                    $tracking->setScoreMax($scoreMax);
-                    $tracking->setScoreScaled($scoreScaled);
-                }
-
-                // Update best success status and completion status
-                $lessonStatus = $completionStatus;
-                if (in_array($successStatus, ['passed', 'failed'])) {
-                    $lessonStatus = $successStatus;
-                }
-
-                $tracking->setLessonStatus($lessonStatus);
-                $bestStatus = $lessonStatus;
-
-                if (
-                    empty($tracking->getCompletionStatus())
-                    || ($completionStatus !== $tracking->getCompletionStatus() && $statusPriority[$completionStatus] > $statusPriority[$tracking->getCompletionStatus()])
-                ) {
-                    // This is no longer needed as completionStatus and successStatus are merged together
-                    // I keep it for now for possible retro compatibility
-                    $tracking->setCompletionStatus($completionStatus);
-                }
-
-                if (empty($progression) && ('completed' === $bestStatus || 'passed' === $bestStatus)) {
-                    $progression = 100;
-                }
-
-                if ($progression > $tracking->getProgression()) {
-                    $tracking->setProgression($progression);
-                }
-
-                break;
-        }
-
-        $updateResult   =   ScormScoTrackingModel::where('user_id', $tracking->getUserId())
+        $row = ScormScoTrackingModel::where('user_id', $tracking->getUserId())
             ->where('sco_id', $sco['id'])
             ->firstOrFail();
 
-        $updateResult->progression  =   $tracking->getProgression();
-        $updateResult->score_raw    =   $tracking->getScoreRaw();
-        $updateResult->score_min    =   $tracking->getScoreMin();
-        $updateResult->score_max    =   $tracking->getScoreMax();
-        $updateResult->score_scaled    =   $tracking->getScoreScaled();
-        $updateResult->lesson_status    =   $tracking->getLessonStatus();
-        $updateResult->completion_status    =   $tracking->getCompletionStatus();
-        $updateResult->session_time    =   $tracking->getSessionTime();
-        $updateResult->total_time_int    =   $tracking->getTotalTimeInt();
-        $updateResult->total_time_string    =   $tracking->getTotalTimeString();
-        $updateResult->entry    =   $tracking->getEntry();
-        $updateResult->suspend_data    =   $tracking->getSuspendData();
-        $updateResult->exit_mode    =   $tracking->getExitMode();
-        $updateResult->credit    =   $tracking->getCredit();
-        $updateResult->lesson_location    =   $tracking->getLessonLocation();
-        $updateResult->lesson_mode    =   $tracking->getLessonMode();
-        $updateResult->is_locked    =   $tracking->getIsLocked();
-        $updateResult->details    =   $tracking->getDetails();
-        $updateResult->latest_date    =   $tracking->getLatestDate();
+        $row->fill([
+            'progression'       => $tracking->getProgression(),
+            'score_raw'         => $tracking->getScoreRaw(),
+            'score_min'         => $tracking->getScoreMin(),
+            'score_max'         => $tracking->getScoreMax(),
+            'score_scaled'      => $tracking->getScoreScaled(),
+            'lesson_status'     => $tracking->getLessonStatus(),
+            'completion_status' => $tracking->getCompletionStatus(),
+            'session_time'      => $tracking->getSessionTime(),
+            'total_time_int'    => $tracking->getTotalTimeInt(),
+            'total_time_string' => $tracking->getTotalTimeString(),
+            'entry'             => $tracking->getEntry(),
+            'suspend_data'      => $tracking->getSuspendData(),
+            'exit_mode'         => $tracking->getExitMode(),
+            'credit'            => $tracking->getCredit(),
+            'lesson_location'   => $tracking->getLessonLocation(),
+            'lesson_mode'       => $tracking->getLessonMode(),
+            'is_locked'         => $tracking->getIsLocked(),
+            'details'           => $tracking->getDetails(),
+            'latest_date'       => $tracking->getLatestDate(),
+        ])->save();
 
-        $updateResult->save();
-
-        return $updateResult;
+        return $row;
     }
 
-    public function resetUserData($scormId, $userId)
+    public function findScoTrackingId(string $scoUuid, string $trackingUuid): ScormScoTrackingModel
     {
-        $scos   =   ScormScoModel::where('scorm_id', $scormId)->get();
+        return ScormScoTrackingModel::with('sco')
+            ->whereHas('sco', fn(Builder $q) => $q->where('uuid', $scoUuid))
+            ->where('uuid', $trackingUuid)
+            ->firstOrFail();
+    }
 
-        foreach ($scos as $sco) {
-            $scoTracking    =   ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->delete();
+    public function checkUserIsCompletedScorm(int $scormId, mixed $userId): bool
+    {
+        $scos = ScormScoModel::where('scorm_id', $scormId)->get();
+
+        $completed = $scos->filter(function (ScormScoModel $sco) use ($userId) {
+            $tracking = ScormScoTrackingModel::where('sco_id', $sco->id)
+                ->where('user_id', $userId)
+                ->first();
+            return $tracking && in_array($tracking->lesson_status, ['passed', 'completed'], true);
+        });
+
+        return $completed->count() === $scos->count();
+    }
+
+    public function resetUserData(int $scormId, mixed $userId): void
+    {
+        ScormScoModel::where('scorm_id', $scormId)
+            ->get()
+            ->each(function (ScormScoModel $sco) use ($userId) {
+                ScormScoTrackingModel::where('sco_id', $sco->id)->where('user_id', $userId)->delete();
+            });
+    }
+
+    // -------------------------------------------------------------------------
+    // Private — persistence
+    // -------------------------------------------------------------------------
+
+    private function persistScorm(string $uuid, string $filename, int $packageSize): ScormModel
+    {
+        $existingScorm = ScormModel::where('uuid', $uuid)->first();
+        $scormData = $this->scormDisk->loadMetadata($uuid);
+
+        if (empty($scormData['identifier']) || empty($scormData['scos'])) {
+            $this->rollbackAndFail($uuid, 'invalid_scorm_data', deleteStorage: $existingScorm === null);
+        }
+
+        if ($existingScorm) {
+            // Re-parse only: refresh DB records but keep extracted source on disk.
+            $this->deleteScormData($existingScorm, deleteStorage: false);
+            $scorm = $existingScorm;
+        } else {
+            $scorm = new ScormModel();
+        }
+
+        $scorm->fill([
+            'uuid'       => $uuid,
+            'title'      => $scormData['title'],
+            'version'    => $scormData['version'],
+            'entry_url'  => $scormData['entryUrl'],
+            'identifier' => $scormData['identifier'],
+            'origin_file' => $filename,
+            'metadata'   => [
+                'package_size' => $packageSize,
+                'created_at'   => $scormData['created_at'] ?? null,
+                'created_by'   => $scormData['created_by'] ?? null,
+            ],
+        ])->save();
+
+        foreach ($scormData['scos'] as $scoData) {
+            $this->saveScoRecursive($scorm->id, $scoData);
+        }
+
+        return $scorm;
+    }
+
+    private function saveScoRecursive(int $scormId, Sco $scoData, ?int $parentId = null): ScormScoModel
+    {
+        $sco = $this->saveSco($scormId, $scoData, $parentId);
+
+        foreach ($scoData->scoChildren ?? [] as $child) {
+            $this->saveScoRecursive($scormId, $child, $sco->id);
+        }
+
+        return $sco;
+    }
+
+    private function saveSco(int $scormId, Sco $scoData, ?int $parentId): ScormScoModel
+    {
+        $sco = new ScormScoModel();
+        $sco->fill([
+            'scorm_id'           => $scormId,
+            'uuid'               => $scoData->uuid,
+            'sco_parent_id'      => $parentId,
+            'entry_url'          => $scoData->entryUrl,
+            'identifier'         => $scoData->identifier,
+            'title'              => $scoData->title,
+            'visible'            => $scoData->visible,
+            'sco_parameters'     => $scoData->parameters,
+            'launch_data'        => $scoData->launchData,
+            'max_time_allowed'   => $scoData->maxTimeAllowed,
+            'time_limit_action'  => $scoData->timeLimitAction,
+            'block'              => $scoData->block,
+            'score_int'          => $scoData->scoreToPassInt,
+            'score_decimal'      => $scoData->scoreToPassDecimal,
+            'completion_threshold' => $scoData->completionThreshold,
+            'prerequisites'      => $scoData->prerequisites,
+        ])->save();
+
+        return $sco;
+    }
+
+    private function deleteScormData(ScormModel $model, bool $deleteStorage = true): void
+    {
+        foreach ($model->scos()->get() as $sco) {
+            $sco->scoTrackings()->delete();
+        }
+        $model->scos()->delete();
+
+        if ($deleteStorage) {
+            $this->scormDisk->deleteScorm($model->uuid);
         }
     }
 
-    private function convertTimeInHundredth($time)
+    private function rollbackAndFail(string $uuid, string $message, bool $deleteStorage = true): never
     {
-        if ($time != null) {
-            $timeInArray = explode(':', $time);
-            $timeInArraySec = explode('.', $timeInArray[2]);
-            $timeInHundredth = 0;
+        if ($deleteStorage) {
+            $this->scormDisk->deleteScorm($uuid);
+        }
 
-            if (isset($timeInArraySec[1])) {
-                if (1 === strlen($timeInArraySec[1])) {
-                    $timeInArraySec[1] .= '0';
-                }
-                $timeInHundredth = intval($timeInArraySec[1]);
-            }
-            $timeInHundredth += intval($timeInArraySec[0]) * 100;
-            $timeInHundredth += intval($timeInArray[1]) * 6000;
-            $timeInHundredth += intval($timeInArray[0]) * 360000;
+        throw new InvalidScormArchiveException($message);
+    }
 
-            return $timeInHundredth;
-        } else {
+    // -------------------------------------------------------------------------
+    // Private — tracking initialisation
+    // -------------------------------------------------------------------------
+
+    private function initScorm12Tracking(ScoTracking $tracking, ScormScoModel $sco, mixed $userId, ?string $userName): array
+    {
+        $tracking->setLessonStatus('not attempted');
+        $tracking->setSuspendData('');
+        $tracking->setEntry('ab-initio');
+        $tracking->setLessonLocation('');
+        $tracking->setCredit('no-credit');
+        $tracking->setTotalTimeInt(0);
+        $tracking->setSessionTime(0);
+        $tracking->setLessonMode('normal');
+        $tracking->setExitMode('');
+        $tracking->setIsLocked($sco->prerequisites !== null);
+
+        return [
+            'cmi.core.entry'        => $tracking->getEntry(),
+            'cmi.core.student_id'   => $userId,
+            'cmi.core.student_name' => $userName,
+        ];
+    }
+
+    private function initScorm2004Tracking(ScoTracking $tracking, mixed $userId, ?string $userName): array
+    {
+        $tracking->setTotalTimeString('PT0S');
+        $tracking->setCompletionStatus('unknown');
+        $tracking->setLessonStatus('unknown');
+        $tracking->setIsLocked(false);
+
+        return [
+            'cmi.entry'               => 'ab-initio',
+            'cmi.learner_id'          => $userId,
+            'cmi.learner_name'        => $userName,
+            'cmi.scaled_passing_score' => 0.5,
+        ];
+    }
+
+    private function hydrateTrackingFromModel(ScoTracking $tracking, ScormScoTrackingModel $model): void
+    {
+        $tracking->setUuid($model->uuid);
+        $tracking->setProgression($model->progression);
+        $tracking->setScoreRaw($model->score_raw);
+        $tracking->setScoreMin($model->score_min);
+        $tracking->setScoreMax($model->score_max);
+        $tracking->setScoreScaled($model->score_scaled);
+        $tracking->setLessonStatus($model->lesson_status);
+        $tracking->setCompletionStatus($model->completion_status);
+        $tracking->setSessionTime($model->session_time);
+        $tracking->setTotalTimeInt($model->total_time_int);
+        $tracking->setTotalTimeString($model->total_time_string);
+        $tracking->setEntry($model->entry);
+        $tracking->setSuspendData($model->suspend_data);
+        $tracking->setCredit($model->credit);
+        $tracking->setExitMode($model->exit_mode);
+        $tracking->setLessonLocation($model->lesson_location);
+        $tracking->setLessonMode($model->lesson_mode);
+        $tracking->setIsLocked($model->is_locked);
+        $tracking->setDetails($model->details);
+        $tracking->setLatestDate(Carbon::parse($model->latest_date));
+    }
+
+    // -------------------------------------------------------------------------
+    // Private — tracking updates
+    // -------------------------------------------------------------------------
+
+    private function applyScorm12Update(ScoTracking $tracking, array $data): void
+    {
+        $tracking->setDetails($data);
+
+        if (!empty($data['cmi.suspend_data'])) {
+            $tracking->setSuspendData($data['cmi.suspend_data']);
+        }
+
+        $scoreRaw   = isset($data['cmi.core.score.raw']) ? (int) $data['cmi.core.score.raw'] : null;
+        $scoreMin   = isset($data['cmi.core.score.min']) ? (int) $data['cmi.core.score.min'] : null;
+        $scoreMax   = isset($data['cmi.core.score.max']) ? (int) $data['cmi.core.score.max'] : null;
+        $status     = $data['cmi.core.lesson_status'] ?? 'unknown';
+        $sessionTime = $this->convertTimeToHundredths($data['cmi.core.session_time'] ?? null);
+        $totalTime   = $this->convertTimeToHundredths($data['cmi.core.total_time'] ?? '0:0:0');
+
+        $tracking->setEntry($data['cmi.core.entry'] ?? null);
+        $tracking->setExitMode($data['cmi.core.exit'] ?? null);
+        $tracking->setLessonLocation($data['cmi.core.lesson_location'] ?? null);
+        $tracking->setSessionTime($sessionTime);
+        $tracking->setTotalTime($totalTime, Scorm::SCORM_12);
+        $tracking->setLessonStatus($status);
+
+        if (empty($tracking->getScoreRaw()) || (!is_null($scoreRaw) && $scoreRaw > (int) $tracking->getScoreRaw())) {
+            $tracking->setScoreRaw($scoreRaw);
+            $tracking->setScoreMin($scoreMin);
+            $tracking->setScoreMax($scoreMax);
+        }
+
+        $progression = !empty($scoreRaw) ? (float) $scoreRaw : 0;
+        if ($progression === 0.0 && in_array($status, ['completed', 'passed'], true)) {
+            $progression = 100;
+        }
+        if ($progression > $tracking->getProgression()) {
+            $tracking->setProgression($progression);
+        }
+    }
+
+    private function applyScorm2004Update(ScoTracking $tracking, array $data): void
+    {
+        $tracking->setDetails($data);
+
+        if (!empty($data['cmi.suspend_data'])) {
+            $tracking->setSuspendData($data['cmi.suspend_data']);
+        }
+
+        $sessionTimeStr  = $this->normalizeIso8601Duration($data['cmi.session_time'] ?? 'PT0S');
+        $completionStatus = $data['cmi.completion_status'] ?? 'unknown';
+        $successStatus    = $data['cmi.success_status'] ?? 'unknown';
+        $scoreRaw         = isset($data['cmi.score.raw'])    ? (int)   $data['cmi.score.raw']    : null;
+        $scoreMin         = isset($data['cmi.score.min'])    ? (int)   $data['cmi.score.min']    : null;
+        $scoreMax         = isset($data['cmi.score.max'])    ? (int)   $data['cmi.score.max']    : null;
+        $scoreScaled      = isset($data['cmi.score.scaled']) ? (float) $data['cmi.score.scaled'] : null;
+        $progression      = isset($data['cmi.progress_measure']) ? (float) $data['cmi.progress_measure'] : 0;
+
+        // Accumulate total time
+        $totalTime   = new DateInterval($tracking->getTotalTimeString());
+        try {
+            $sessionTime = new DateInterval($sessionTimeStr);
+        } catch (Exception) {
+            $sessionTime = new DateInterval('PT0S');
+        }
+        $base = new DateTime('@0');
+        $base->add($totalTime)->add($sessionTime);
+        $totalTimeInterval = $this->secondsToIsoDuration($base->getTimestamp());
+        $data['cmi.total_time'] = $totalTimeInterval;
+        $tracking->setTotalTimeString($totalTimeInterval);
+
+        if (empty($tracking->getScoreRaw()) || (!is_null($scoreRaw) && $scoreRaw > (int) $tracking->getScoreRaw())) {
+            $tracking->setScoreRaw($scoreRaw);
+            $tracking->setScoreMin($scoreMin);
+            $tracking->setScoreMax($scoreMax);
+            $tracking->setScoreScaled($scoreScaled);
+        }
+
+        $lessonStatus = in_array($successStatus, ['passed', 'failed'], true) ? $successStatus : $completionStatus;
+        $tracking->setLessonStatus($lessonStatus);
+        $tracking->setCompletionStatus($completionStatus);
+
+        if ($progression === 0.0 && in_array($lessonStatus, ['completed', 'passed'], true)) {
+            $progression = 100;
+        }
+        if ($progression > $tracking->getProgression()) {
+            $tracking->setProgression($progression);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private — time utilities
+    // -------------------------------------------------------------------------
+
+    /**
+     * Convert a SCORM 1.2 HH:MM:SS.ss time string to hundredths of a second.
+     */
+    private function convertTimeToHundredths(?string $time): int
+    {
+        if ($time === null || $time === '') {
             return 0;
         }
+
+        [$h, $m, $rest] = explode(':', $time);
+        [$s, $cs]       = array_pad(explode('.', $rest), 2, '0');
+
+        if (strlen($cs) === 1) {
+            $cs .= '0';
+        }
+
+        return (int) $h * 360000
+            + (int) $m * 6000
+            + (int) $s * 100
+            + (int) $cs;
     }
 
     /**
-     * Converts a time in seconds to a DateInterval string.
-     *
-     * @param int $seconds
-     *
-     * @return string
+     * Convert a total number of seconds to a SCORM 2004 ISO 8601 duration string.
      */
-    private function retrieveIntervalFromSeconds($seconds)
+    private function secondsToIsoDuration(int $seconds): string
     {
-        $result = '';
-        $remainingTime = (int) $seconds;
-
-        if (empty($remainingTime)) {
-            $result .= 'PT0S';
-        } else {
-            $nbDays = (int) ($remainingTime / 86400);
-            $remainingTime %= 86400;
-            $nbHours = (int) ($remainingTime / 3600);
-            $remainingTime %= 3600;
-            $nbMinutes = (int) ($remainingTime / 60);
-            $nbSeconds = $remainingTime % 60;
-            $result .= 'P' . $nbDays . 'DT' . $nbHours . 'H' . $nbMinutes . 'M' . $nbSeconds . 'S';
+        if ($seconds === 0) {
+            return 'PT0S';
         }
 
-        return $result;
-    }
+        $d  = intdiv($seconds, 86400);
+        $seconds %= 86400;
+        $h  = intdiv($seconds, 3600);
+        $seconds %= 3600;
+        $m  = intdiv($seconds, 60);
+        $s  = $seconds % 60;
 
-    private function formatSessionTime($sessionTime)
-    {
-        $formattedValue = 'PT0S';
-        $generalPattern = '/^P([0-9]+Y)?([0-9]+M)?([0-9]+D)?T([0-9]+H)?([0-9]+M)?([0-9]+S)?$/';
-        $decimalPattern = '/^P([0-9]+Y)?([0-9]+M)?([0-9]+D)?T([0-9]+H)?([0-9]+M)?[0-9]+\.[0-9]{1,2}S$/';
-
-        if ('PT' !== $sessionTime) {
-            if (preg_match($generalPattern, $sessionTime)) {
-                $formattedValue = $sessionTime;
-            } elseif (preg_match($decimalPattern, $sessionTime)) {
-                $formattedValue = preg_replace(['/\.[0-9]+S$/'], ['S'], $sessionTime);
-            }
-        }
-
-        return $formattedValue;
+        return "P{$d}DT{$h}H{$m}M{$s}S";
     }
 
     /**
-     * Clean resources and throw exception.
+     * Normalise a SCORM 2004 session time string to a valid ISO 8601 duration,
+     * stripping decimal seconds that PHP's DateInterval does not support.
      */
-    private function onError($msg)
+    private function normalizeIso8601Duration(string $value): string
     {
-        $this->scormDisk->deleteScorm($this->uuid);
-        throw new InvalidScormArchiveException($msg);
+        if ($value === 'PT') {
+            return 'PT0S';
+        }
+
+        // Full integer duration
+        if (preg_match('/^P([0-9]+Y)?([0-9]+M)?([0-9]+D)?T([0-9]+H)?([0-9]+M)?([0-9]+S)?$/', $value)) {
+            return $value;
+        }
+
+        // Duration with decimal seconds — strip the fractional part
+        if (preg_match('/^P([0-9]+Y)?([0-9]+M)?([0-9]+D)?T([0-9]+H)?([0-9]+M)?[0-9]+\.[0-9]{1,2}S$/', $value)) {
+            return preg_replace('/\.[0-9]+S$/', 'S', $value);
+        }
+
+        return 'PT0S';
     }
 }

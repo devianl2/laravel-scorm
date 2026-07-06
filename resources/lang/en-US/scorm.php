@@ -9,6 +9,14 @@ return [
     'invalid_scorm_manifest_identifier' => 'Invalid SCORM manifest identifier.',
     'scorm_disk_not_define' => 'SCORM disk not define',
 
+    // ZIP file validation messages
+    'zip_file_not_found' => 'ZIP file does not exist.',
+    'zip_file_not_readable' => 'ZIP file is not readable.',
+    'imsmanifest_not_found' => 'imsmanifest.xml not found in ZIP archive.',
+    'file_not_found' => 'File does not exist.',
+    'not_a_zip_file' => 'File is not a ZIP archive.',
+    'zip_open_failed' => 'Failed to open ZIP file.',
+
     // SCORM Items/Children messages
     'default_organization_not_found_message' => 'SCORM item default organization not found.',
     'no_organization_found_message' => 'No organization found.',

@@ -1,0 +1,44 @@
+<?php
+
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Migrations\Migration;
+
+class AddMetadataToScormTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        $tableNames = config('scorm.table_names');
+
+        if (empty($tableNames)) {
+            throw new \Exception('Error: config/scorm.php not loaded. Run [php artisan config:clear] and try again.');
+        }
+
+        Schema::table($tableNames['scorm_table'], function (Blueprint $table) {
+            $table->json('metadata')->nullable()->after('entry_url');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        $tableNames = config('scorm.table_names');
+
+        if (empty($tableNames)) {
+            throw new \Exception('Error: config/scorm.php not loaded. Run [php artisan config:clear] and try again.');
+        }
+
+        Schema::table($tableNames['scorm_table'], function (Blueprint $table) {
+            $table->dropColumn('metadata');
+        });
+    }
+}
