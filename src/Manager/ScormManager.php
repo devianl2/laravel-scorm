@@ -64,7 +64,10 @@ class ScormManager
         $archiveKey = $uuid . '/' . $file->getClientOriginalName();
 
         $this->scormDisk->putArchiveFile($file, $archiveKey);
-        $this->scormDisk->extractFromArchive($archiveKey, $uuid);
+
+        if (!$this->scormDisk->contentExists($uuid)) {
+            $this->scormDisk->extractFromArchive($archiveKey, $uuid);
+        }
 
         return $this->persistScorm(
             uuid: $uuid,
@@ -235,16 +238,17 @@ class ScormManager
 
     private function persistScorm(string $uuid, string $filename, int $packageSize): ScormModel
     {
+        $existingScorm = ScormModel::where('uuid', $uuid)->first();
         $scormData = $this->scormDisk->loadMetadata($uuid);
 
         if (empty($scormData['identifier']) || empty($scormData['scos'])) {
-            $this->rollbackAndFail($uuid, 'invalid_scorm_data');
+            $this->rollbackAndFail($uuid, 'invalid_scorm_data', deleteStorage: $existingScorm === null);
         }
 
-        $scorm = ScormModel::where('uuid', $uuid)->first();
-
-        if ($scorm) {
-            $this->deleteScormData($scorm);
+        if ($existingScorm) {
+            // Re-parse only: refresh DB records but keep extracted source on disk.
+            $this->deleteScormData($existingScorm, deleteStorage: false);
+            $scorm = $existingScorm;
         } else {
             $scorm = new ScormModel();
         }
@@ -306,18 +310,24 @@ class ScormManager
         return $sco;
     }
 
-    private function deleteScormData(ScormModel $model): void
+    private function deleteScormData(ScormModel $model, bool $deleteStorage = true): void
     {
         foreach ($model->scos()->get() as $sco) {
             $sco->scoTrackings()->delete();
         }
         $model->scos()->delete();
-        $this->scormDisk->deleteScorm($model->uuid);
+
+        if ($deleteStorage) {
+            $this->scormDisk->deleteScorm($model->uuid);
+        }
     }
 
-    private function rollbackAndFail(string $uuid, string $message): never
+    private function rollbackAndFail(string $uuid, string $message, bool $deleteStorage = true): never
     {
-        $this->scormDisk->deleteScorm($uuid);
+        if ($deleteStorage) {
+            $this->scormDisk->deleteScorm($uuid);
+        }
+
         throw new InvalidScormArchiveException($message);
     }
 
