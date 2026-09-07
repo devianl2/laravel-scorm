@@ -56,7 +56,7 @@ class ScormLib
             if (is_null($defaultOrganization)) {
                 while (
                     !is_null($organization)
-                    && 'organization' !== $organization->nodeName
+                    && 'organization' !== $organization->localName
                 ) {
                     $organization = $organization->nextSibling;
                 }
@@ -68,18 +68,38 @@ class ScormLib
             }
             // A default organization is defined
             else {
+                $defaultOrganizationNormalized = trim($defaultOrganization);
+                $firstOrganization = null;
+
                 while (
                     !is_null($organization)
-                    && ('organization' !== $organization->nodeName
+                    && ('organization' !== $organization->localName
                         || is_null($organization->attributes->getNamedItem('identifier'))
-                        || $organization->attributes->getNamedItem('identifier')->nodeValue !== $defaultOrganization)
+                        || trim($organization->attributes->getNamedItem('identifier')->nodeValue) !== $defaultOrganizationNormalized)
                 ) {
+                    if (
+                        'organization' === $organization->localName
+                        && is_null($firstOrganization)
+                        && !is_null($organization->attributes->getNamedItem('identifier'))
+                    ) {
+                        $firstOrganization = $organization;
+                    }
+
                     $organization = $organization->nextSibling;
                 }
 
                 if (is_null($organization)) {
-                    \Log::error('parseOrganizationsNode: Default organization not found: ' . $defaultOrganization);
-                    throw new InvalidScormArchiveException('default_organization_not_found_message');
+                    if (!is_null($firstOrganization)) {
+                        \Log::warning(
+                            'parseOrganizationsNode: Default organization "' . $defaultOrganization
+                            . '" not found, falling back to first organization: '
+                            . $firstOrganization->attributes->getNamedItem('identifier')->nodeValue
+                        );
+                        $organization = $firstOrganization;
+                    } else {
+                        \Log::error('parseOrganizationsNode: Default organization not found: ' . $defaultOrganization);
+                        throw new InvalidScormArchiveException('default_organization_not_found_message');
+                    }
                 }
             }
 
@@ -173,7 +193,7 @@ class ScormLib
         $itemCount = 0;
 
         while (!is_null($item)) {
-            if ('item' === $item->nodeName) {
+            if ('item' === $item->localName) {
                 $itemCount++;
 
                 $sco = new Sco();
@@ -271,7 +291,7 @@ class ScormLib
         $child = $item->firstChild;
 
         while (!is_null($child)) {
-            if ($child->nodeName === 'imsss:sequencing' || $child->nodeName === 'sequencing') {
+            if ($child->localName === 'sequencing') {
                 $sequencingNodes[] = $child;
             }
             $child = $child->nextSibling;
@@ -290,20 +310,16 @@ class ScormLib
         $child = $sequencingNode->firstChild;
 
         while (!is_null($child)) {
-            switch ($child->nodeName) {
-                case 'imsss:controlMode':
+            switch ($child->localName) {
                 case 'controlMode':
                     $this->parseControlMode($sco, $child);
                     break;
-                case 'imsss:sequencingRules':
                 case 'sequencingRules':
                     $this->parseSequencingRules($sco, $child);
                     break;
-                case 'imsss:deliveryControls':
                 case 'deliveryControls':
                     $this->parseDeliveryControls($sco, $child);
                     break;
-                case 'imsss:objectives':
                 case 'objectives':
                     $this->parseObjectives($sco, $child);
                     break;
@@ -616,9 +632,9 @@ class ScormLib
         // Extract other resource-level metadata
         $child = $resource->firstChild;
         while (!is_null($child)) {
-            if ($child->nodeName === 'file') {
+            if ($child->localName === 'file') {
                 // Process file dependencies if needed
-            } elseif ($child->nodeName === 'metadata') {
+            } elseif ($child->localName === 'metadata') {
                 $this->parseResourceMetadata($sco, $child);
             }
             $child = $child->nextSibling;
@@ -644,7 +660,7 @@ class ScormLib
         $child = $resource->firstChild;
 
         while (!is_null($child)) {
-            if ($child->nodeName === 'metadata') {
+            if ($child->localName === 'metadata') {
                 $metadataNodes[] = $child;
             }
             $child = $child->nextSibling;
@@ -843,19 +859,19 @@ class ScormLib
     private function findNodeParams(Sco $sco, \DOMNode $item)
     {
         while (!is_null($item)) {
-            switch ($item->nodeName) {
+            switch ($item->localName) {
                 case 'title':
                     $sco->setTitle($item->nodeValue);
                     break;
-                case 'adlcp:masteryscore':
+                case 'masteryscore':
                     $sco->setScoreToPassInt($item->nodeValue);
                     break;
-                case 'adlcp:maxtimeallowed':
-                case 'imsss:attemptAbsoluteDurationLimit':
+                case 'maxtimeallowed':
+                case 'attemptAbsoluteDurationLimit':
                     $sco->setMaxTimeAllowed($item->nodeValue);
                     break;
-                case 'adlcp:timelimitaction':
-                case 'adlcp:timeLimitAction':
+                case 'timelimitaction':
+                case 'timeLimitAction':
                     $action = strtolower($item->nodeValue);
 
                     if (
@@ -867,17 +883,17 @@ class ScormLib
                         $sco->setTimeLimitAction($action);
                     }
                     break;
-                case 'adlcp:datafromlms':
-                case 'adlcp:dataFromLMS':
+                case 'datafromlms':
+                case 'dataFromLMS':
                     $sco->setLaunchData($item->nodeValue);
                     break;
-                case 'adlcp:prerequisites':
+                case 'prerequisites':
                     $sco->setPrerequisites($item->nodeValue);
                     break;
-                case 'imsss:minNormalizedMeasure':
+                case 'minNormalizedMeasure':
                     $sco->setScoreToPassDecimal($item->nodeValue);
                     break;
-                case 'adlcp:completionThreshold':
+                case 'completionThreshold':
                     if ($item->nodeValue && !is_nan($item->nodeValue)) {
                         $sco->setCompletionThreshold(floatval($item->nodeValue));
                     }
